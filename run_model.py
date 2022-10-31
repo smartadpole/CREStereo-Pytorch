@@ -4,8 +4,6 @@ import cv2
 import os
 import argparse
 import scipy.io as io
-# import thop
-# from thop import clever_format
 
 from nets import Model
 from utils import inference
@@ -13,14 +11,10 @@ from utils import inference
 device = 'cuda'
 
 
-# Ref: https://github.com/megvii-research/CREStereo/blob/master/test.py
-
-
 if __name__ == '__main__':
 
     parser = argparse.ArgumentParser(description='Description of your program')
-    parser.add_argument('-l', '--left_image_fn', help='Filename of left image', required=True)
-    parser.add_argument('-r', '--right_image_fn', help='Filename of left image', required=True)
+    parser.add_argument('-i', '--input_folder', help='Contains subfolders cam0/cam1', required=True)
     parser.add_argument('-o', '--output_directory', help="Directory to save output", default="demo_output")
     parser.add_argument('-e', action='store_true', help="Use to compute params and MACs needed by network")
     args = parser.parse_args()

@@ -1,0 +1,3 @@
+[submodule "thirdparty/torchinfo"]
+	path = thirdparty/torchinfo
+	url = https://github.com/TylerYep/torchinfo.git
