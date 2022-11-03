@@ -2,8 +2,9 @@ import numpy as np
 import torch
 from torch.nn import functional as F
 
-from test_model_v1 import device
 from torchinfo import summary
+
+device = 'cuda'
 
 
 def inference(left, right, model, n_iter=20, init_flow=True):
