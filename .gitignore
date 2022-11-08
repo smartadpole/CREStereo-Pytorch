@@ -156,3 +156,5 @@ vis_results/
 .idea/
 
 models/*
+
+train_log/

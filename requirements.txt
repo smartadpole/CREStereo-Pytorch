@@ -2,3 +2,6 @@ torchvision
 torchaudio
 imread_from_url
 scipy
+pyyaml
+tensorboardX
+MegEngine
