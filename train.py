@@ -165,6 +165,9 @@ def main(args):
             if batch_idx % args.minibatch_per_epoch == 0 and batch_idx != 0:
                 break
             # batch_idx += 1
+            if len(mini_batch_data["left"]) == 0:
+                continue
+
             cur_iters += 1
 
             # parse data
@@ -259,6 +262,11 @@ def main(args):
             "state_dict": model.state_dict(),
             "optim_state_dict": optimizer.state_dict(),
         }
+
+        print("End of epoch ->")
+        for key, value in ckp_data.items():
+            print(f"{key}: {value}")
+        worklog.info(f"Training is done, exit.")
         torch.save(ckp_data, os.path.join(log_model_dir, "latest.pth"))
         if epoch_idx % args.model_save_freq_epoch == 0:
             save_path = os.path.join(log_model_dir, "epoch-%d.pth" % epoch_idx)

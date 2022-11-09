@@ -53,7 +53,7 @@ def evaluate_compute(model, imgL: np.ndarray, imgR: np.ndarray):
     imgR_ = torch.tensor(imgR_.astype("float32")).to(device)
 
     n_iters = 8
-    summary_depth = 4
+    summary_depth = 3
     imgL_dw2 = F.interpolate(
         imgL_,
         size=(imgL_.shape[2] // 2, imgL_.shape[3] // 2),

@@ -2,8 +2,8 @@ seed: 0
 mixed_precision: false
 base_lr: 4.0e-4
 
-nr_gpus: 8
-batch_size: 4
+nr_gpus: 1
+batch_size: 1
 n_total_epoch: 600
 minibatch_per_epoch: 500
 

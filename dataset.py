@@ -175,6 +175,8 @@ class CREStereoDataset(Dataset):
 
     def get_disp(self, path):
         disp = cv2.imread(path, cv2.IMREAD_UNCHANGED)
+        if disp is None:
+            return None
         return disp.astype(np.float32) / 32
 
     def __getitem__(self, index):
@@ -188,9 +190,23 @@ class CREStereoDataset(Dataset):
         # read img, disp
         left_img = cv2.imread(left_path, cv2.IMREAD_COLOR)
         right_img = cv2.imread(right_path, cv2.IMREAD_COLOR)
+        if left_img is None or right_img is None:
+            return {
+                "left": [],
+                "right": [],
+                "disparity": [],
+                "mask": [],
+            }
+
         left_disp = self.get_disp(left_disp_path)
         right_disp = self.get_disp(right_disp_path)
-
+        if left_disp is None or right_disp is None:
+            return {
+                "left": [],
+                "right": [],
+                "disparity": [],
+                "mask": [],
+            }
         if self.rng.binomial(1, 0.5):
             left_img, right_img = np.fliplr(right_img), np.fliplr(left_img)
             left_disp, right_disp = np.fliplr(right_disp), np.fliplr(left_disp)

@@ -12,6 +12,12 @@
 - Download the model from [here](https://drive.google.com/file/d/1D2s1v4VhJlNz98FQpFxf_kBAKQVN_7xo/view?usp=sharing) and save it into the **[models](https://github.com/ibaiGorordo/CREStereo-Pytorch/tree/main/models)** folder.
 - The model was covnerted from the original **[MegEngine weights](https://drive.google.com/file/d/1Wx_-zDQh7BUFBmN9im_26DFpnf3AkXj4/view)** using the `convert_weights.py` script. Place the MegEngine weights (crestereo_eth3d.mge) file into the **[models](https://github.com/ibaiGorordo/CREStereo-Pytorch/tree/main/models)** folder before the conversion.
 
+# Installation
+```commandline
+sudo apt-get install python3-tk
+pip install -r requirements.txt
+```
+
 # Licences:
 - CREStereo (Apache License 2.0): https://github.com/megvii-research/CREStereo/blob/master/LICENSE
 - RAFT (BSD 3-Clause):https://github.com/princeton-vl/RAFT/blob/master/LICENSE

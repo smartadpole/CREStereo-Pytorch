@@ -4,16 +4,22 @@ import cv2
 import os
 import argparse
 import scipy.io as io
-# import thop
-# from thop import clever_format
-
+import matplotlib.pyplot as plt
 from nets import Model
-from utils import inference
+from utils import inference, evaluate_compute
 
 device = 'cuda'
 
 
-# Ref: https://github.com/megvii-research/CREStereo/blob/master/test.py
+def convert_depth_to_display(disp: np.ndarray, t: float = 1.):
+    """
+
+    """
+    disp_vis = (disp - disp.min()) / (disp.max() - disp.min()) * 255.0
+    disp_vis = disp_vis.astype("uint8")
+    disp_vis = cv2.applyColorMap(disp_vis, cv2.COLORMAP_INFERNO)
+
+    return disp_vis
 
 
 if __name__ == '__main__':
@@ -56,24 +62,20 @@ if __name__ == '__main__':
     model.to(device)
     model.eval()
 
-    # pred = inference(imgL, imgR, model, n_iter=5)
-    # with profile(activities=[ProfilerActivity.CPU, ProfilerActivity.CUDA], record_shapes=True, with_stack=True) as prof:
-    #     with record_function("model_inference"):
-    #         pred = inference(imgL, imgR, model, n_iter=5)
-
-    # print(prof.key_averages().table(sort_by="cuda_time_total", row_limit=20))
-    # prof.export_chrome_trace("../trace.json")
-    # prof.export_stacks("../profiler_stacks.txt", "self_cuda_time_total")
-    # print(model)
-
-    pred = inference(imgL, imgR, model, n_iter=20)
+    # evaluate_compute(imgL.copy(), imgR.copy(), model)
+    # pred_eval = inference(imgL.copy(), imgR.copy(), model, n_iter=4)
+    pred = inference(imgL.copy(), imgR.copy(), model, n_iter=20)
 
     t = float(in_w) / float(eval_w)
     disp = cv2.resize(pred, (in_w, in_h), interpolation=cv2.INTER_LINEAR) * t
-
-    disp_vis = (disp - disp.min()) / (disp.max() - disp.min()) * 255.0
-    disp_vis = disp_vis.astype("uint8")
-    disp_vis = cv2.applyColorMap(disp_vis, cv2.COLORMAP_INFERNO)
+    disp_vis = convert_depth_to_display(disp)
+    # disp_vis_eval = convert_depth_to_display(cv2.resize(pred_eval, (in_w, in_h), interpolation=cv2.INTER_LINEAR) * t)
+    #
+    # fig, axes = plt.subplots(1, 2, figsize=(16, 8))
+    # axes[0].imshow(1. / pred)
+    # axes[0].set_title("n-iter=20")
+    # axes[1].imshow(1. / pred_eval)
+    # axes[1].set_title("n-iter=4")
 
     combined_img = np.hstack((left_img, disp_vis))
 

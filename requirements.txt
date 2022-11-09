@@ -5,3 +5,4 @@ scipy
 pyyaml
 tensorboardX
 MegEngine
+matplotlib
