@@ -64,7 +64,7 @@ if __name__ == '__main__':
 
     # evaluate_compute(imgL.copy(), imgR.copy(), model)
     # pred_eval = inference(imgL.copy(), imgR.copy(), model, n_iter=4)
-    pred = inference(imgL.copy(), imgR.copy(), model, n_iter=20)
+    pred = inference(imgL, imgR, model, n_iter=20)
 
     t = float(in_w) / float(eval_w)
     disp = cv2.resize(pred, (in_w, in_h), interpolation=cv2.INTER_LINEAR) * t

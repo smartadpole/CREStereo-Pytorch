@@ -4,6 +4,8 @@ import time
 import logging
 from collections import namedtuple
 
+import matplotlib.pyplot as plt
+import numpy as np
 import yaml
 from tensorboardX import SummaryWriter
 
@@ -14,6 +16,9 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 from torch.utils.data import DataLoader
+# from torchvision import transforms
+from torch.utils.data.sampler import SubsetRandomSampler
+from torch.nn import functional as F
 
 
 def parse_yaml(file_path: str) -> namedtuple:
@@ -38,24 +43,24 @@ def ensure_dir(path):
 
 
 def adjust_learning_rate(optimizer, epoch):
-
     warm_up = 0.02
     const_range = 0.6
     min_lr_rate = 0.05
 
     if epoch <= args.n_total_epoch * warm_up:
         lr = (1 - min_lr_rate) * args.base_lr / (
-            args.n_total_epoch * warm_up
+                args.n_total_epoch * warm_up
         ) * epoch + min_lr_rate * args.base_lr
     elif args.n_total_epoch * warm_up < epoch <= args.n_total_epoch * const_range:
         lr = args.base_lr
     else:
         lr = (min_lr_rate - 1) * args.base_lr / (
-            (1 - const_range) * args.n_total_epoch
+                (1 - const_range) * args.n_total_epoch
         ) * epoch + (1 - min_lr_rate * const_range) / (1 - const_range) * args.base_lr
 
     for param_group in optimizer.param_groups:
         param_group['lr'] = lr
+
 
 def sequence_loss(flow_preds, flow_gt, valid, gamma=0.8):
     '''
@@ -73,7 +78,36 @@ def sequence_loss(flow_preds, flow_gt, valid, gamma=0.8):
     return flow_loss
 
 
+def inference_eval(left, right, model, n_iter=20, init_flow=True):
+    # print("Model Forwarding...")
+    imgL = left.type(torch.float32)
+    imgR = right.type(torch.float32)
+    if init_flow:
+        imgL_dw2 = F.interpolate(
+            imgL,
+            size=(imgL.shape[2] // 2, imgL.shape[3] // 2),
+            mode="bilinear",
+            align_corners=True,
+        )
+        imgR_dw2 = F.interpolate(
+            imgR,
+            size=(imgL.shape[2] // 2, imgL.shape[3] // 2),
+            mode="bilinear",
+            align_corners=True,
+        )
+    # print(imgR_dw2.shape)
+    with torch.inference_mode():
+        if init_flow:
+            pred_flow_dw2 = model(imgL_dw2, imgR_dw2, iters=n_iter, flow_init=None)
+            pred_flow = model(imgL, imgR, iters=n_iter, flow_init=pred_flow_dw2[-1])
+        else:
+            pred_flow = model(imgL, imgR, iters=n_iter, flow_init=None)
+
+    return pred_flow
+
+
 def main(args):
+    debug_image = False
     # initial info
     torch.manual_seed(args.seed)
     torch.cuda.manual_seed(args.seed)
@@ -88,7 +122,7 @@ def main(args):
     model = Model(
         max_disp=args.max_disp, mixed_precision=args.mixed_precision, test_mode=False
     )
-    model = nn.DataParallel(model,device_ids=[i for i in range(world_size)])
+    model = nn.DataParallel(model, device_ids=[i for i in range(world_size)])
     model.cuda()
     optimizer = optim.Adam(model.parameters(), lr=0.1, betas=(0.9, 0.999))
     # model = nn.DataParallel(model,device_ids=[0])
@@ -140,10 +174,29 @@ def main(args):
 
     # datasets
     dataset = CREStereoDataset(args.training_data_path)
+
+    # Creating data indices for training and validation splits:
+    dataset_size = len(dataset)
+    indices = list(range(dataset_size))
+    validation_split = .1
+    split = int(np.floor(validation_split * dataset_size))
+
+    np.random.seed(1234)
+    np.random.shuffle(indices)
+    train_indices, val_indices = indices[split:], indices[:split]
+
+    # Creating PT data samplers and loaders:
+    dataset_train = CREStereoDataset(args.training_data_path, sub_indexes=train_indices)
+    dataset_eval = CREStereoDataset(args.training_data_path, sub_indexes=val_indices, eval_mode=True)  # No augmentation
+
     # if rank == 0:
-    worklog.info(f"Dataset size: {len(dataset)}")
-    dataloader = DataLoader(dataset, args.batch_size, shuffle=True,
-                            num_workers=0, drop_last=True, persistent_workers=False, pin_memory=True)
+    worklog.info(f"Dataset size: {len(dataset_train)}")
+    dataloader_train = DataLoader(dataset_train, args.batch_size, shuffle=True,
+                                  num_workers=0, drop_last=True, persistent_workers=False,
+                                  pin_memory=True)
+    dataloader_valid = DataLoader(dataset_eval, args.batch_size, shuffle=True,
+                                  num_workers=0, drop_last=True, persistent_workers=False,
+                                  pin_memory=True)
 
     # counter
     cur_iters = start_iters
@@ -153,6 +206,7 @@ def main(args):
 
         # adjust learning rate
         epoch_total_train_loss = 0
+        epoch_total_eval_loss = 0.
         adjust_learning_rate(optimizer, epoch_idx)
         model.train()
 
@@ -160,7 +214,7 @@ def main(args):
         # batch_idx = 0
 
         # for mini_batch_data in dataloader:
-        for batch_idx, mini_batch_data in enumerate(dataloader):
+        for batch_idx, mini_batch_data in enumerate(dataloader_train):
 
             if batch_idx % args.minibatch_per_epoch == 0 and batch_idx != 0:
                 break
@@ -182,15 +236,15 @@ def main(args):
             optimizer.zero_grad()
 
             # pre-process
-            gt_disp = torch.unsqueeze(gt_disp, dim=1)  # [2, 384, 512] -> [2, 1, 384, 512]
-            gt_flow = torch.cat([gt_disp, gt_disp * 0], dim=1)  # [2, 2, 384, 512]
+            gt_disp = torch.unsqueeze(gt_disp, dim=1)  # [2, h, w] -> [2, 1, h, w]
+            gt_flow = torch.cat([gt_disp, gt_disp * 0], dim=1)  # [2, 2, h, w]
 
             # forward
             flow_predictions = model(left.cuda(), right.cuda())
 
             # loss & backword
             loss = sequence_loss(
-                flow_predictions, gt_flow, valid_mask, gamma=0.8
+                flow_predictions, gt_flow, valid_mask, gamma=args.gamma
             )
 
             # loss stats
@@ -206,9 +260,9 @@ def main(args):
                 time_iter_passed = t3 - t1
                 step_passed = cur_iters - start_iters
                 eta = (
-                    (total_iters - cur_iters)
-                    / max(step_passed, 1e-7)
-                    * time_train_passed
+                        (total_iters - cur_iters)
+                        / max(step_passed, 1e-7)
+                        * time_train_passed
                 )
 
                 meta_info = list()
@@ -245,9 +299,61 @@ def main(args):
 
             t1 = time.perf_counter()
 
+        for batch_idx, mini_batch_data in enumerate(dataloader_valid):
+            if batch_idx % args.minibatch_per_epoch == 0 and batch_idx != 0:
+                break
+            # batch_idx += 1
+            if len(mini_batch_data["left"]) == 0:
+                continue
+
+            # parse data
+            left, right, gt_disp, valid_mask = (
+                mini_batch_data["left"],
+                mini_batch_data["right"],
+                mini_batch_data["disparity"].cuda(),
+                mini_batch_data["mask"].cuda(),
+            )
+            # pre-process
+            gt_disp = torch.unsqueeze(gt_disp, dim=1)  # [2, h, w] -> [2, 1, h, w]
+            gt_flow = torch.cat([gt_disp, gt_disp * 0], dim=1)  # [2, 2, h, w]
+
+            model.eval()
+            pred_eval = inference_eval(left.cuda(), right.cuda(), model, n_iter=20)
+
+            loss_eval = sequence_loss(
+                pred_eval, gt_flow, valid_mask, gamma=args.gamma
+            )
+
+            if debug_image:
+                pred_final = torch.squeeze(pred_eval[0][:, 0, :, :])
+                left_img = torch.squeeze(left).permute(1, 2, 0)
+
+                fig, axes = plt.subplots(2, 2, figsize=(12, 10))
+                axes[0, 0].imshow(np.squeeze(gt_disp.cpu().numpy()))
+                axes[0, 0].set_title("disparity")
+
+                axes[0, 1].imshow(np.squeeze(pred_final.cpu().numpy()))
+                axes[0, 1].set_title("pred disparity")
+
+                axes[1, 0].imshow(np.squeeze(left_img.cpu().numpy()))
+                axes[1, 0].set_title("left")
+
+                axes[1, 1].imshow(np.squeeze(valid_mask.cpu().numpy()))
+                axes[1, 1].set_title("valid_mask")
+
+                plt.tight_layout()
+
+            loss_item_eval = loss_eval.data.item()
+            epoch_total_eval_loss += loss_item_eval
+
         tb_log.add_scalar(
             "train/loss",
             epoch_total_train_loss / args.minibatch_per_epoch,
+            epoch_idx,
+        )
+        tb_log.add_scalar(
+            "valid/loss",
+            epoch_total_eval_loss / args.minibatch_per_epoch,
             epoch_idx,
         )
         tb_log.flush()
@@ -259,6 +365,7 @@ def main(args):
             "batch_size": args.batch_size,
             "epoch_size": args.minibatch_per_epoch,
             "train_loss": epoch_total_train_loss / args.minibatch_per_epoch,
+            "eval_loss": epoch_total_eval_loss / args.minibatch_per_epoch,
             "state_dict": model.state_dict(),
             "optim_state_dict": optimizer.state_dict(),
         }

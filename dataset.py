@@ -3,6 +3,7 @@ import cv2
 import glob
 import numpy as np
 from PIL import Image, ImageEnhance
+from typing import Optional
 
 from megengine.data.dataset import Dataset
 
@@ -160,9 +161,12 @@ class Augmentor:
 
 
 class CREStereoDataset(Dataset):
-    def __init__(self, root):
+    def __init__(self, root, sub_indexes: Optional[np.ndarray] = None, eval_mode: bool = False):
         super().__init__()
         self.imgs = glob.glob(os.path.join(root, "**/*_left.jpg"), recursive=True)
+        if sub_indexes is not None:
+            self.imgs = [self.imgs[idx] for idx in sub_indexes]
+
         self.augmentor = Augmentor(
             image_height=384,
             image_width=512,
@@ -172,6 +176,7 @@ class CREStereoDataset(Dataset):
             seed=0,
         )
         self.rng = np.random.RandomState(0)
+        self.eval_mode = eval_mode
 
     def get_disp(self, path):
         disp = cv2.imread(path, cv2.IMREAD_UNCHANGED)
@@ -207,15 +212,21 @@ class CREStereoDataset(Dataset):
                 "disparity": [],
                 "mask": [],
             }
-        if self.rng.binomial(1, 0.5):
-            left_img, right_img = np.fliplr(right_img), np.fliplr(left_img)
-            left_disp, right_disp = np.fliplr(right_disp), np.fliplr(left_disp)
-        left_disp[left_disp == np.inf] = 0
 
-        # augmentaion
-        left_img, right_img, left_disp, disp_mask = self.augmentor(
-            left_img, right_img, left_disp
-        )
+        if not self.eval_mode:
+            if self.rng.binomial(1, 0.5):
+                left_img, right_img = np.fliplr(right_img), np.fliplr(left_img)
+                left_disp, right_disp = np.fliplr(right_disp), np.fliplr(left_disp)
+            left_disp[left_disp == np.inf] = 0
+
+            # augmentaion
+            left_img, right_img, left_disp, disp_mask = self.augmentor(
+                left_img, right_img, left_disp
+            )
+        else:
+            resize_scale = 1.
+            disp_mask = (left_disp < float(self.augmentor.max_disp / resize_scale)) & (left_disp > 0)
+            disp_mask = disp_mask.astype("float32")
 
         left_img = left_img.transpose(2, 0, 1).astype("uint8")
         right_img = right_img.transpose(2, 0, 1).astype("uint8")

@@ -18,3 +18,5 @@ training_data_path: "../CREStereo/stereo_trainset/crestereo"
 
 log_level: "logging.INFO"
 
+gamma: 0.9
+
