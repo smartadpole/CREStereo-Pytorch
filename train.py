@@ -203,6 +203,8 @@ def main(args):
     total_iters = args.minibatch_per_epoch * args.n_total_epoch
     t0 = time.perf_counter()
     for epoch_idx in range(start_epoch_idx, args.n_total_epoch + 1):
+        torch.manual_seed(args.seed + epoch_idx)
+        torch.cuda.manual_seed(args.seed + epoch_idx)
 
         # adjust learning rate
         epoch_total_train_loss = 0
@@ -296,6 +298,10 @@ def main(args):
                 tb_log.flush()
 
             t1 = time.perf_counter()
+
+        #################
+        ###  Evaluation #
+        #################
         if epoch_idx % 5 == 0:
             for batch_idx, mini_batch_data in enumerate(dataloader_valid):
                 if batch_idx % args.minibatch_per_epoch == 0 and batch_idx != 0:
@@ -311,6 +317,7 @@ def main(args):
                     mini_batch_data["disparity"].cuda(),
                     mini_batch_data["mask"].cuda(),
                 )
+
                 # pre-process
                 gt_disp = torch.unsqueeze(gt_disp, dim=1)  # [2, h, w] -> [2, 1, h, w]
                 gt_flow = torch.cat([gt_disp, gt_disp * 0], dim=1)  # [2, 2, h, w]
@@ -322,7 +329,8 @@ def main(args):
                     pred_eval, gt_flow, valid_mask, gamma=args.gamma
                 )
 
-                if debug_image:
+                if batch_idx % (args.minibatch_per_epoch // 10) == 0:
+                    plt.close()
                     pred_final = torch.squeeze(pred_eval[-1][:, 0, :, :])
                     left_img = torch.squeeze(left).permute(1, 2, 0)
 
@@ -331,7 +339,7 @@ def main(args):
                     axes[0, 0].set_title("disparity")
 
                     axes[0, 1].imshow(np.squeeze(pred_final.cpu().numpy()))
-                    axes[0, 1].set_title("pred disparity")
+                    axes[0, 1].set_title(f"pred disparity: {loss_eval.data.item():.02f}")
 
                     axes[1, 0].imshow(np.squeeze(left_img.cpu().numpy()))
                     axes[1, 0].set_title("left")
@@ -340,6 +348,10 @@ def main(args):
                     axes[1, 1].set_title("valid_mask")
 
                     plt.tight_layout()
+
+                    prefix = mini_batch_data["file_source"]["prefix"]
+                    tb_log.add_figure(f"Evaluation/{prefix}", fig,
+                                      global_step=epoch_idx * len(dataloader_valid) + batch_idx)
 
                 loss_item_eval = loss_eval.data.item()
                 epoch_total_eval_loss += loss_item_eval
@@ -368,9 +380,6 @@ def main(args):
             "optim_state_dict": optimizer.state_dict(),
         }
 
-        print("End of epoch ->")
-        for key, value in ckp_data.items():
-            print(f"{key}: {value}")
         worklog.info(f"Epoch is done, next epoch.")
         torch.save(ckp_data, os.path.join(log_model_dir, "latest.pth"))
         if epoch_idx % args.model_save_freq_epoch == 0:

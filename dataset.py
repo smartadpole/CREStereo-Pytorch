@@ -231,7 +231,15 @@ class CREStereoDataset(Dataset):
         left_img = left_img.transpose(2, 0, 1).astype("uint8")
         right_img = right_img.transpose(2, 0, 1).astype("uint8")
 
+        file_sources = {
+            "left_path": left_path,
+            "prefix": os.path.basename(prefix[0]),
+            "right_path": right_path,
+            "left_disp_path": left_disp_path,
+            "right_disp_path": right_disp_path
+        }
         return {
+            "file_source": file_sources,
             "left": left_img,
             "right": right_img,
             "disparity": left_disp,
