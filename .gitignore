@@ -158,3 +158,5 @@ vis_results/
 models/*
 
 train_log/
+
+demo_output/
