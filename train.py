@@ -178,7 +178,7 @@ def main(args):
     # Creating data indices for training and validation splits:
     dataset_size = len(dataset)
     indices = list(range(dataset_size))
-    validation_split = .1
+    validation_split = .05
     split = int(np.floor(validation_split * dataset_size))
 
     np.random.seed(1234)
@@ -211,14 +211,12 @@ def main(args):
         model.train()
 
         t1 = time.perf_counter()
-        # batch_idx = 0
 
         # for mini_batch_data in dataloader:
         for batch_idx, mini_batch_data in enumerate(dataloader_train):
 
             if batch_idx % args.minibatch_per_epoch == 0 and batch_idx != 0:
                 break
-            # batch_idx += 1
             if len(mini_batch_data["left"]) == 0:
                 continue
 
@@ -298,53 +296,53 @@ def main(args):
                 tb_log.flush()
 
             t1 = time.perf_counter()
+        if epoch_idx % 5 == 0:
+            for batch_idx, mini_batch_data in enumerate(dataloader_valid):
+                if batch_idx % args.minibatch_per_epoch == 0 and batch_idx != 0:
+                    break
+                # batch_idx += 1
+                if len(mini_batch_data["left"]) == 0:
+                    continue
 
-        for batch_idx, mini_batch_data in enumerate(dataloader_valid):
-            if batch_idx % args.minibatch_per_epoch == 0 and batch_idx != 0:
-                break
-            # batch_idx += 1
-            if len(mini_batch_data["left"]) == 0:
-                continue
+                # parse data
+                left, right, gt_disp, valid_mask = (
+                    mini_batch_data["left"],
+                    mini_batch_data["right"],
+                    mini_batch_data["disparity"].cuda(),
+                    mini_batch_data["mask"].cuda(),
+                )
+                # pre-process
+                gt_disp = torch.unsqueeze(gt_disp, dim=1)  # [2, h, w] -> [2, 1, h, w]
+                gt_flow = torch.cat([gt_disp, gt_disp * 0], dim=1)  # [2, 2, h, w]
 
-            # parse data
-            left, right, gt_disp, valid_mask = (
-                mini_batch_data["left"],
-                mini_batch_data["right"],
-                mini_batch_data["disparity"].cuda(),
-                mini_batch_data["mask"].cuda(),
-            )
-            # pre-process
-            gt_disp = torch.unsqueeze(gt_disp, dim=1)  # [2, h, w] -> [2, 1, h, w]
-            gt_flow = torch.cat([gt_disp, gt_disp * 0], dim=1)  # [2, 2, h, w]
+                model.eval()
+                pred_eval = inference_eval(left.cuda(), right.cuda(), model, n_iter=20)
 
-            model.eval()
-            pred_eval = inference_eval(left.cuda(), right.cuda(), model, n_iter=20)
+                loss_eval = sequence_loss(
+                    pred_eval, gt_flow, valid_mask, gamma=args.gamma
+                )
 
-            loss_eval = sequence_loss(
-                pred_eval, gt_flow, valid_mask, gamma=args.gamma
-            )
+                if debug_image:
+                    pred_final = torch.squeeze(pred_eval[-1][:, 0, :, :])
+                    left_img = torch.squeeze(left).permute(1, 2, 0)
 
-            if debug_image:
-                pred_final = torch.squeeze(pred_eval[0][:, 0, :, :])
-                left_img = torch.squeeze(left).permute(1, 2, 0)
+                    fig, axes = plt.subplots(2, 2, figsize=(12, 10))
+                    axes[0, 0].imshow(np.squeeze(gt_disp.cpu().numpy()))
+                    axes[0, 0].set_title("disparity")
 
-                fig, axes = plt.subplots(2, 2, figsize=(12, 10))
-                axes[0, 0].imshow(np.squeeze(gt_disp.cpu().numpy()))
-                axes[0, 0].set_title("disparity")
+                    axes[0, 1].imshow(np.squeeze(pred_final.cpu().numpy()))
+                    axes[0, 1].set_title("pred disparity")
 
-                axes[0, 1].imshow(np.squeeze(pred_final.cpu().numpy()))
-                axes[0, 1].set_title("pred disparity")
+                    axes[1, 0].imshow(np.squeeze(left_img.cpu().numpy()))
+                    axes[1, 0].set_title("left")
 
-                axes[1, 0].imshow(np.squeeze(left_img.cpu().numpy()))
-                axes[1, 0].set_title("left")
+                    axes[1, 1].imshow(np.squeeze(valid_mask.cpu().numpy()))
+                    axes[1, 1].set_title("valid_mask")
 
-                axes[1, 1].imshow(np.squeeze(valid_mask.cpu().numpy()))
-                axes[1, 1].set_title("valid_mask")
+                    plt.tight_layout()
 
-                plt.tight_layout()
-
-            loss_item_eval = loss_eval.data.item()
-            epoch_total_eval_loss += loss_item_eval
+                loss_item_eval = loss_eval.data.item()
+                epoch_total_eval_loss += loss_item_eval
 
         tb_log.add_scalar(
             "train/loss",
@@ -373,7 +371,7 @@ def main(args):
         print("End of epoch ->")
         for key, value in ckp_data.items():
             print(f"{key}: {value}")
-        worklog.info(f"Training is done, exit.")
+        worklog.info(f"Epoch is done, next epoch.")
         torch.save(ckp_data, os.path.join(log_model_dir, "latest.pth"))
         if epoch_idx % args.model_save_freq_epoch == 0:
             save_path = os.path.join(log_model_dir, "epoch-%d.pth" % epoch_idx)

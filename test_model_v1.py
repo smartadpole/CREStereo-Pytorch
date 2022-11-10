@@ -3,6 +3,8 @@ import numpy as np
 import cv2
 import os
 import argparse
+from collections import OrderedDict
+
 import scipy.io as io
 import matplotlib.pyplot as plt
 from nets import Model
@@ -55,10 +57,15 @@ if __name__ == '__main__':
     imgL = cv2.resize(left_img, (eval_w, eval_h), interpolation=cv2.INTER_LINEAR)
     imgR = cv2.resize(right_img, (eval_w, eval_h), interpolation=cv2.INTER_LINEAR)
 
-    model_path = "models/crestereo_eth3d.pth"
+    model_path = './train_log/models/latest.pth'  # "models/crestereo_eth3d.pth"
+    state_dict = torch.load(model_path)
+    model_state_dict = OrderedDict()
+    for k, v in state_dict['state_dict'].items():
+        name = k[7:]  # remove `module.`
+        model_state_dict[name] = v
 
     model = Model(max_disp=256, mixed_precision=False, test_mode=True)
-    model.load_state_dict(torch.load(model_path), strict=True)
+    model.load_state_dict(model_state_dict, strict=True)
     model.to(device)
     model.eval()
 
@@ -69,7 +76,7 @@ if __name__ == '__main__':
     t = float(in_w) / float(eval_w)
     disp = cv2.resize(pred, (in_w, in_h), interpolation=cv2.INTER_LINEAR) * t
     disp_vis = convert_depth_to_display(disp)
-    # disp_vis_eval = convert_depth_to_display(cv2.resize(pred_eval, (in_w, in_h), interpolation=cv2.INTER_LINEAR) * t)
+    #disp_vis_eval = convert_depth_to_display(cv2.resize(pred_eval, (in_w, in_h), interpolation=cv2.INTER_LINEAR) * t)
     #
     # fig, axes = plt.subplots(1, 2, figsize=(16, 8))
     # axes[0].imshow(1. / pred)

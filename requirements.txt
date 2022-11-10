@@ -7,3 +7,4 @@ tensorboardX
 MegEngine
 matplotlib
 pandas
+tensorboard
