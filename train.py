@@ -208,7 +208,6 @@ def main(args):
 
         # adjust learning rate
         epoch_total_train_loss = 0
-        epoch_total_eval_loss = 0.
         adjust_learning_rate(optimizer, epoch_idx)
         model.train()
 
@@ -303,6 +302,7 @@ def main(args):
         ###  Evaluation #
         #################
         if epoch_idx % 5 == 0:
+            epoch_total_eval_loss = 0.
             for batch_idx, mini_batch_data in enumerate(dataloader_valid):
                 if batch_idx % args.minibatch_per_epoch == 0 and batch_idx != 0:
                     break
@@ -355,6 +355,12 @@ def main(args):
 
                 loss_item_eval = loss_eval.data.item()
                 epoch_total_eval_loss += loss_item_eval
+
+            tb_log.add_scalar(
+                "valid/loss",
+                epoch_total_eval_loss / args.minibatch_per_epoch,
+                epoch_idx,
+            )
 
         tb_log.add_scalar(
             "train/loss",

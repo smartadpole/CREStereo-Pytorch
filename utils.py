@@ -4,10 +4,8 @@ from torch.nn import functional as F
 
 from torchinfo import summary
 
-device = 'cuda'
 
-
-def inference(left, right, model, n_iter=20, init_flow=True):
+def inference(left, right, model, n_iter=20, init_flow: bool = True, device: str = 'cuda'):
     print("Model Forwarding...")
     imgL = left.transpose(2, 0, 1)
     imgR = right.transpose(2, 0, 1)
@@ -43,7 +41,7 @@ def inference(left, right, model, n_iter=20, init_flow=True):
     return pred_disp
 
 
-def evaluate_compute(model, imgL: np.ndarray, imgR: np.ndarray):
+def evaluate_compute(model, imgL: np.ndarray, imgR: np.ndarray, device: str = 'cuda'):
     imgL_ = imgL.transpose(2, 0, 1)
     imgR_ = imgR.transpose(2, 0, 1)
     imgL_ = np.ascontiguousarray(imgL_[None, :, :, :])

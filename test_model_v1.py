@@ -10,7 +10,7 @@ import matplotlib.pyplot as plt
 from nets import Model
 from utils import inference, evaluate_compute
 
-device = 'cuda'
+device = 'cpu'
 
 
 def convert_depth_to_display(disp: np.ndarray, t: float = 1.):
@@ -71,7 +71,7 @@ if __name__ == '__main__':
 
     # evaluate_compute(imgL.copy(), imgR.copy(), model)
     # pred_eval = inference(imgL.copy(), imgR.copy(), model, n_iter=4)
-    pred = inference(imgL, imgR, model, n_iter=20)
+    pred = inference(imgL, imgR, model, n_iter=20, device=device)
 
     t = float(in_w) / float(eval_w)
     disp = cv2.resize(pred, (in_w, in_h), interpolation=cv2.INTER_LINEAR) * t
@@ -98,3 +98,7 @@ if __name__ == '__main__':
     cv2.namedWindow("output", cv2.WINDOW_NORMAL)
     cv2.imshow("output", combined_img)
     cv2.waitKey(10)
+
+    plt.figure()
+    plt.imshow(1. / pred)
+    plt.show()
