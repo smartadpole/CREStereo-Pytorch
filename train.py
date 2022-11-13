@@ -17,8 +17,9 @@ import torch.nn as nn
 import torch.optim as optim
 from torch.utils.data import DataLoader
 # from torchvision import transforms
-from torch.utils.data.sampler import SubsetRandomSampler
+# from torch.utils.data.sampler import SubsetRandomSampler
 from torch.nn import functional as F
+from mpl_toolkits.axes_grid1 import make_axes_locatable
 
 
 def parse_yaml(file_path: str) -> namedtuple:
@@ -335,17 +336,31 @@ def main(args):
                     left_img = torch.squeeze(left).permute(1, 2, 0)
 
                     fig, axes = plt.subplots(2, 2, figsize=(12, 10))
-                    axes[0, 0].imshow(np.squeeze(gt_disp.cpu().numpy()))
+                    im = axes[0, 0].imshow(np.squeeze(gt_disp.cpu().numpy()))
                     axes[0, 0].set_title("disparity")
 
-                    axes[0, 1].imshow(np.squeeze(pred_final.cpu().numpy()))
+                    divider = make_axes_locatable(axes[0, 0])
+                    cax = divider.append_axes("right", size="5%", pad=0.05)
+                    plt.colorbar(im, cax=cax)
+
+                    im = axes[0, 1].imshow(np.squeeze(pred_final.cpu().numpy()))
                     axes[0, 1].set_title(f"pred disparity: {loss_eval.data.item():.02f}")
+                    divider = make_axes_locatable(axes[0, 1])
+                    cax = divider.append_axes("right", size="5%", pad=0.05)
+                    plt.colorbar(im, cax=cax)
 
                     axes[1, 0].imshow(np.squeeze(left_img.cpu().numpy()))
                     axes[1, 0].set_title("left")
 
-                    axes[1, 1].imshow(np.squeeze(valid_mask.cpu().numpy()))
-                    axes[1, 1].set_title("valid_mask")
+                    pred_diff = np.squeeze(gt_disp.cpu().numpy()) - np.squeeze(pred_final.cpu().numpy())
+                    valid = np.squeeze(valid_mask.cpu().numpy()).astype(bool)
+                    pred_diff[~valid] = np.nan
+                    im = axes[1, 1].imshow(np.squeeze(pred_diff))
+                    axes[1, 1].set_title("error")
+
+                    divider = make_axes_locatable(axes[1, 1])
+                    cax = divider.append_axes("right", size="5%", pad=0.05)
+                    plt.colorbar(im, cax=cax)
 
                     plt.tight_layout()
 
