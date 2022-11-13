@@ -233,7 +233,7 @@ class CREStereoDataset(Dataset):
 
         file_sources = {
             "left_path": left_path,
-            "prefix": os.path.basename(prefix[0]),
+            "prefix": os.path.basename(prefix),
             "right_path": right_path,
             "left_disp_path": left_disp_path,
             "right_disp_path": right_disp_path
