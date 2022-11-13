@@ -301,8 +301,8 @@ def main(args):
         #################
         ###  Evaluation #
         #################
+        epoch_total_eval_loss = 0.
         if epoch_idx % 5 == 0:
-            epoch_total_eval_loss = 0.
             for batch_idx, mini_batch_data in enumerate(dataloader_valid):
                 if batch_idx % args.minibatch_per_epoch == 0 and batch_idx != 0:
                     break
@@ -329,7 +329,7 @@ def main(args):
                     pred_eval, gt_flow, valid_mask, gamma=args.gamma
                 )
 
-                if batch_idx % (args.minibatch_per_epoch // 10) == 0:
+                if batch_idx % (args.minibatch_per_epoch // 50) == 0:
                     plt.close()
                     pred_final = torch.squeeze(pred_eval[-1][:, 0, :, :])
                     left_img = torch.squeeze(left).permute(1, 2, 0)
