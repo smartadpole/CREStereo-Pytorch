@@ -201,6 +201,7 @@ def main(args):
 
     # counter
     cur_iters = start_iters
+    eval_iters = start_iters
     total_iters = args.minibatch_per_epoch * args.n_total_epoch
     t0 = time.perf_counter()
     for epoch_idx in range(start_epoch_idx, args.n_total_epoch + 1):
@@ -299,17 +300,19 @@ def main(args):
 
             t1 = time.perf_counter()
 
-        #################
-        ###  Evaluation #
-        #################
+        ##################
+        ###  Evaluation  #
+        ##################
         epoch_total_eval_loss = 0.
-        if epoch_idx % 5 == 0:
+        if epoch_idx % 10 == 0:
+            t1_eval = time.perf_counter()
             for batch_idx, mini_batch_data in enumerate(dataloader_valid):
                 if batch_idx % args.minibatch_per_epoch == 0 and batch_idx != 0:
                     break
-                # batch_idx += 1
                 if len(mini_batch_data["left"]) == 0:
                     continue
+
+                eval_iters += 1
 
                 # parse data
                 left, right, gt_disp, valid_mask = (
@@ -325,18 +328,20 @@ def main(args):
 
                 model.eval()
                 pred_eval = inference_eval(left.cuda(), right.cuda(), model, n_iter=20)
+                t2_eval = time.perf_counter()
 
                 loss_eval = sequence_loss(
                     pred_eval, gt_flow, valid_mask, gamma=args.gamma
                 )
+                t3_eval = time.perf_counter()
 
                 if batch_idx % (args.minibatch_per_epoch // 50) == 0:
                     plt.close()
-                    pred_final = torch.squeeze(pred_eval[-1][:, 0, :, :])
-                    left_img = torch.squeeze(left).permute(1, 2, 0)
+                    pred_final = torch.squeeze(pred_eval[-1][0, 0, :, :])
+                    left_img = torch.squeeze(left[0, :, :, :]).permute(1, 2, 0)
 
                     fig, axes = plt.subplots(2, 2, figsize=(12, 10))
-                    im = axes[0, 0].imshow(np.squeeze(gt_disp.cpu().numpy()))
+                    im = axes[0, 0].imshow(np.squeeze(gt_disp[0, :, :, :].cpu().numpy()))
                     axes[0, 0].set_title("disparity")
 
                     divider = make_axes_locatable(axes[0, 0])
@@ -352,8 +357,8 @@ def main(args):
                     axes[1, 0].imshow(np.squeeze(left_img.cpu().numpy()))
                     axes[1, 0].set_title("left")
 
-                    pred_diff = np.squeeze(gt_disp.cpu().numpy()) - np.squeeze(pred_final.cpu().numpy())
-                    valid = np.squeeze(valid_mask.cpu().numpy()).astype(bool)
+                    pred_diff = np.squeeze(gt_disp[0, :, :, :].cpu().numpy()) - np.squeeze(pred_final.cpu().numpy())
+                    valid = np.squeeze(valid_mask[0, :, :].cpu().numpy()).astype(bool)
                     pred_diff[~valid] = np.nan
                     im = axes[1, 1].imshow(np.squeeze(pred_diff))
                     axes[1, 1].set_title("error")
@@ -364,18 +369,54 @@ def main(args):
 
                     plt.tight_layout()
 
-                    prefix = mini_batch_data["file_source"]["prefix"]
+                    prefix = mini_batch_data["file_source"]["prefix"][0]
+
                     tb_log.add_figure(f"Evaluation/{prefix}", fig,
                                       global_step=epoch_idx * len(dataloader_valid) + batch_idx)
 
                 loss_item_eval = loss_eval.data.item()
                 epoch_total_eval_loss += loss_item_eval
 
-            tb_log.add_scalar(
-                "valid/loss",
-                epoch_total_eval_loss / args.minibatch_per_epoch,
-                epoch_idx,
-            )
+                if eval_iters % 10 == 0:
+                    tdata = t2_eval - t1_eval
+                    time_eval_passed = t3_eval - t0
+                    time_iter_passed = t3_eval - t1_eval
+                    step_passed = eval_iters - start_iters
+                    eta = (
+                            (total_iters - eval_iters)
+                            / max(step_passed, 1e-7)
+                            * time_eval_passed
+                    )
+
+                    meta_info = list()
+                    meta_info.append("{:.2g} b/s".format(1.0 / time_eval_passed))
+                    meta_info.append("passed:{}".format(format_time(time_iter_passed)))
+                    meta_info.append("eta:{}".format(format_time(eta)))
+                    meta_info.append(
+                        "data_time:{:.2g}".format(tdata / time_eval_passed)
+                    )
+
+                    meta_info.append(
+                        "[{}/{}:{}/{}]".format(
+                            epoch_idx,
+                            args.n_total_epoch,
+                            batch_idx,
+                            args.minibatch_per_epoch,
+                        )
+                    )
+                    loss_info = [" ==> {}:{:.4g}".format("eval loss", loss_item_eval)]
+                    # exp_name = ['\n' + os.path.basename(os.getcwd())]
+
+                    info = [",".join(meta_info)] + loss_info
+                    worklog.info("".join(info))
+
+                t1_eval = time.perf_counter()
+
+                tb_log.add_scalar(
+                    "valid/loss",
+                    epoch_total_eval_loss / args.minibatch_per_epoch,
+                    epoch_idx,
+                )
 
         tb_log.add_scalar(
             "train/loss",
@@ -389,6 +430,7 @@ def main(args):
         ckp_data = {
             "epoch": epoch_idx,
             "iters": cur_iters,
+            "eval_iters": eval_iters,
             "batch_size": args.batch_size,
             "epoch_size": args.minibatch_per_epoch,
             "train_loss": epoch_total_train_loss / args.minibatch_per_epoch,

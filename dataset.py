@@ -231,6 +231,7 @@ class CREStereoDataset(Dataset):
         left_img = left_img.transpose(2, 0, 1).astype("uint8")
         right_img = right_img.transpose(2, 0, 1).astype("uint8")
 
+        prefix = prefix[0] if isinstance(prefix, list) else prefix
         file_sources = {
             "left_path": left_path,
             "prefix": os.path.basename(prefix),
