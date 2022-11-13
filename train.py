@@ -367,11 +367,7 @@ def main(args):
             epoch_total_train_loss / args.minibatch_per_epoch,
             epoch_idx,
         )
-        tb_log.add_scalar(
-            "valid/loss",
-            epoch_total_eval_loss / args.minibatch_per_epoch,
-            epoch_idx,
-        )
+
         tb_log.flush()
 
         # save model params
