@@ -25,6 +25,7 @@ DATA_TYPE = ['kitti', 'dl', 'depth', 'server']
 def GetArgs():
     parser = argparse.ArgumentParser(description='LaC')
     parser.add_argument('--no_cuda', action='store_true', default=False)
+    parser.add_argument('--ignore_target', action='store_true', default=False)
     parser.add_argument('--gpu_id', type=str, default='0')
     parser.add_argument('--data_path', type=str, default='/media/data/dataset/KITTI/data_scene_flow/training/')
     parser.add_argument('--model_file', type=str, default='models/crestereo_eth3d.pth')
@@ -57,7 +58,7 @@ def GetImages(path, flag='kitti'):
         right_files = [f.replace('/cam0/', '/cam1/') for f in left_files]
     elif 'depth' == flag:
         left_files = [f for f in paths if 'left' in f]
-        right_files = [f.replace('left/', 'right/') for f in left_files]
+        right_files = [f.replace('left/', 'right/').replace('left.', 'right.') for f in left_files]
     elif 'server' == flag:
         left_files = [f for f in paths if '.L' in f]
         right_files = [f.replace('L/', 'R/').replace('L.', 'R.') for f in left_files]
@@ -165,11 +166,12 @@ def main():
 
         output_name = left_image_file[root_len + 1:]
 
-        name = os.path.splitext(output_name)[0] + ".png"
-        output_concat_color = os.path.join(args.output, "concat_color", name)
+        if args.ignore_target:
+            name = os.path.splitext(output_name)[0] + ".png"
+            output_concat_color = os.path.join(args.output, "concat_color", name)
 
-        if os.path.exists(output_concat_color):
-            continue
+            if os.path.exists(output_concat_color):
+                continue
 
 
         left_img = cv2.imread(left_image_file)
