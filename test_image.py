@@ -57,7 +57,7 @@ def GetImages(path, flag='kitti'):
         right_files = [f.replace('/cam0/', '/cam1/') for f in left_files]
     elif 'depth' == flag:
         left_files = [f for f in paths if 'left' in f]
-        right_files = [f.replace('/left/', '/right/') for f in left_files]
+        right_files = [f.replace('left/', 'right/') for f in left_files]
     elif 'server' == flag:
         left_files = [f for f in paths if '.L' in f]
         right_files = [f.replace('L/', 'R/').replace('L.', 'R.') for f in left_files]
@@ -174,6 +174,8 @@ def main():
 
         left_img = cv2.imread(left_image_file)
         right_img = cv2.imread(right_image_file)
+        # left_img = cv2.cvtColor(left_img, cv2.COLOR_BGR2RGB)
+        # right_img = cv2.cvtColor(right_img, cv2.COLOR_BGR2RGB)
 
         in_h, in_w = left_img.shape[:2]
 
