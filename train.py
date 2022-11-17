@@ -193,10 +193,10 @@ def main(args):
     # if rank == 0:
     worklog.info(f"Dataset size: {len(dataset_train)}")
     dataloader_train = DataLoader(dataset_train, args.batch_size, shuffle=True,
-                                  num_workers=0, drop_last=True, persistent_workers=False,
+                                  num_workers=args.num_works, drop_last=True, persistent_workers=False,
                                   pin_memory=True)
     dataloader_valid = DataLoader(dataset_eval, args.batch_size, shuffle=True,
-                                  num_workers=0, drop_last=True, persistent_workers=False,
+                                  num_workers=args.num_works, drop_last=True, persistent_workers=False,
                                   pin_memory=True)
 
     # counter
