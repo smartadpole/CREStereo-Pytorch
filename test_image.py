@@ -19,7 +19,7 @@ from time import time
 import cv2
 from file import Walk, MkdirSimple
 
-DATA_TYPE = ['kitti', 'indemind', 'depth', 'i18R']
+DATA_TYPE = ['kitti', 'dl', 'depth', 'server']
 
 
 def GetArgs():
@@ -52,13 +52,13 @@ def GetImages(path, flag='kitti'):
     if 'kitti' == flag:
         left_files = [f for f in paths if 'image_02' in f]
         right_files = [f.replace('/image_02/', '/image_03/') for f in left_files]
-    elif 'indemind' == flag:
+    elif 'dl' == flag:
         left_files = [f for f in paths if 'cam0' in f]
         right_files = [f.replace('/cam0/', '/cam1/') for f in left_files]
     elif 'depth' == flag:
         left_files = [f for f in paths if 'left' in f]
         right_files = [f.replace('/left/', '/right/') for f in left_files]
-    elif 'i18R' == flag:
+    elif 'server' == flag:
         left_files = [f for f in paths if '.L' in f]
         right_files = [f.replace('L/', 'R/').replace('L.', 'R.') for f in left_files]
     else:
