@@ -29,3 +29,29 @@ pip install -r requirements.txt
 - LoFTR: https://github.com/zju3dv/LoFTR
 - Grid sample replacement: https://zenn.dev/pinto0309/scraps/7d4032067d0160
 - torch2mge: https://github.com/MegEngine/torch2mge
+
+# Run
+## test
+批量测试数据集，并导出可视化结果；  
+
+```python
+test_image.py --data_path $dataset_dir --output $output_dir --model_file $model_dir/crestereo_eth3d.pth --bf $value
+```
+
+参数 data_path： `$dataset_dir` 目录下的子目录（不限深度）需满足如下一种情况，分别对应存放左右目图片数据的文件夹：
+- image_02, image_03   
+- left, right   
+- cam0, cam1   
+- L, R   
+
+参数 bf： $value 为基线长度（单位 cm）*焦距（单位 像素）；   
+
+输出结果：   
+```
+color           # 方便可视化，对深度图做的上色；
+gray            # 视差图
+concat          # 左上： 原图，右上：视差图，左下：color，右下：深度图
+concat_color
+concat_depth
+concat_gray
+```
