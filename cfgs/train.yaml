@@ -3,9 +3,9 @@ mixed_precision: false
 base_lr: 4.0e-4
 
 nr_gpus: 1
-batch_size: 4
+batch_size: 3
 n_total_epoch: 600
-minibatch_per_epoch: 1000
+minibatch_per_epoch: 1333
 
 loadmodel: ~
 log_dir: "/work/model/depth/stereo/CREStereo/v1.0.0/train_log"

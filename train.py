@@ -300,11 +300,32 @@ def main(args):
 
             t1 = time.perf_counter()
 
+
+        epoch_total_eval_loss = 0.
+
+        # save model params
+        ckp_data = {
+            "epoch": epoch_idx,
+            "iters": cur_iters,
+            "eval_iters": eval_iters,
+            "batch_size": args.batch_size,
+            "epoch_size": args.minibatch_per_epoch,
+            "train_loss": epoch_total_train_loss / args.minibatch_per_epoch,
+            "eval_loss": epoch_total_eval_loss / args.minibatch_per_epoch,
+            "state_dict": model.state_dict(),
+            "optim_state_dict": optimizer.state_dict(),
+        }
+
+        torch.save(ckp_data, os.path.join(log_model_dir, "latest.pth"))
+        if epoch_idx % args.model_save_freq_epoch == 0:
+            save_path = os.path.join(log_model_dir, "epoch-%d.pth" % epoch_idx)
+            worklog.info(f"Model params saved: {save_path}")
+            torch.save(ckp_data, save_path)
+
         ##################
         ###  Evaluation  #
         ##################
-        epoch_total_eval_loss = 0.
-        if epoch_idx % 10 == 0:
+        if epoch_idx % 50 == 0:
             t1_eval = time.perf_counter()
             for batch_idx, mini_batch_data in enumerate(dataloader_valid):
                 if batch_idx % args.minibatch_per_epoch == 0 and batch_idx != 0:
@@ -416,35 +437,17 @@ def main(args):
                     "valid/loss",
                     epoch_total_eval_loss / args.minibatch_per_epoch,
                     epoch_idx,
-                )
+                    )
 
         tb_log.add_scalar(
             "train/loss",
             epoch_total_train_loss / args.minibatch_per_epoch,
             epoch_idx,
-        )
+            )
 
         tb_log.flush()
 
-        # save model params
-        ckp_data = {
-            "epoch": epoch_idx,
-            "iters": cur_iters,
-            "eval_iters": eval_iters,
-            "batch_size": args.batch_size,
-            "epoch_size": args.minibatch_per_epoch,
-            "train_loss": epoch_total_train_loss / args.minibatch_per_epoch,
-            "eval_loss": epoch_total_eval_loss / args.minibatch_per_epoch,
-            "state_dict": model.state_dict(),
-            "optim_state_dict": optimizer.state_dict(),
-        }
-
         worklog.info(f"Epoch is done, next epoch.")
-        torch.save(ckp_data, os.path.join(log_model_dir, "latest.pth"))
-        if epoch_idx % args.model_save_freq_epoch == 0:
-            save_path = os.path.join(log_model_dir, "epoch-%d.pth" % epoch_idx)
-            worklog.info(f"Model params saved: {save_path}")
-            torch.save(ckp_data, save_path)
 
     worklog.info("Training is done, exit.")
 

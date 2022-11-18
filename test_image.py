@@ -1,11 +1,4 @@
-import torch
-import numpy as np
-import cv2
-import os
-import argparse
-import scipy.io as io
-import re
-
+from collections import OrderedDict
 from nets import Model
 from utils import inference
 import argparse
@@ -57,7 +50,7 @@ def GetImages(path, flag='kitti'):
         left_files = [f for f in paths if 'cam0' in f]
         right_files = [f.replace('/cam0/', '/cam1/') for f in left_files]
     elif 'depth' == flag:
-        left_files = [f for f in paths if 'left' in f]
+        left_files = [f for f in paths if 'left' in f and 'disp' not in f]
         right_files = [f.replace('left/', 'right/').replace('left.', 'right.') for f in left_files]
     elif 'server' == flag:
         left_files = [f for f in paths if '.L' in f]
@@ -157,7 +150,14 @@ def main():
     model.eval()
 
     ckpt = torch.load(args.model_file)
-    model.load_state_dict(ckpt)
+
+    if 'optim_state_dict' in ckpt.keys():
+        model_state_dict = OrderedDict()
+        for k, v in ckpt['state_dict'].items():
+            name = k[7:]  # remove `module.`
+            model_state_dict[name] = v
+    else:
+        model.load_state_dict(ckpt)
     # model.load_state_dict(torch.load(args.model_file), strict=True)
 
     for left_image_file, right_image_file in tzip(left_files, right_files):
