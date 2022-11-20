@@ -15,6 +15,9 @@ max_disp: 256
 image_width: 512
 image_height: 384
 training_data_path: "/online/DEPTH/crestereo_dataset"
+dataset: crestereo
+#training_data_path: "/online/DEPTH/KITTI_monodepth2/origin"
+#dataset: kitti
 
 log_level: "logging.INFO"
 

@@ -10,7 +10,8 @@ import yaml
 from tensorboardX import SummaryWriter
 
 from nets import Model
-from dataset import CREStereoDataset
+from dataset.dataset import CREStereoDataset
+from dataset.KITTI import KITTIDataset
 
 import torch
 import torch.nn as nn
@@ -174,7 +175,15 @@ def main(args):
         start_iters = 0
 
     # datasets
-    dataset = CREStereoDataset(args.training_data_path)
+    if 'kitti' == args.dataset:
+        dataset_type = KITTIDataset
+    elif 'crestereo' == args.dataset:
+        dataset_type = CREStereoDataset
+    else:
+        print("donot support dataset type: {}".format(args.dataset))
+        return
+
+    dataset = dataset_type(args.training_data_path)
 
     # Creating data indices for training and validation splits:
     dataset_size = len(dataset)
@@ -187,8 +196,8 @@ def main(args):
     train_indices, val_indices = indices[split:], indices[:split]
 
     # Creating PT data samplers and loaders:
-    dataset_train = CREStereoDataset(args.training_data_path, sub_indexes=train_indices)
-    dataset_eval = CREStereoDataset(args.training_data_path, sub_indexes=val_indices, eval_mode=True)  # No augmentation
+    dataset_train = dataset_type(args.training_data_path, sub_indexes=train_indices)
+    dataset_eval = dataset_type(args.training_data_path, sub_indexes=val_indices, eval_mode=True)  # No augmentation
 
     # if rank == 0:
     worklog.info(f"Dataset size: {len(dataset_train)}")

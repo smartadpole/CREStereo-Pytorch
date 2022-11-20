@@ -164,7 +164,7 @@ class CREStereoDataset(Dataset):
     def __init__(self, root, sub_indexes: Optional[np.ndarray] = None, eval_mode: bool = False):
         super().__init__()
         self.imgs = glob.glob(os.path.join(root, "**/*_left.jpg"), recursive=True)
-        if sub_indexes is not None:
+        if sub_indexes is not None and len(self.imgs) > 0:
             self.imgs = [self.imgs[idx] for idx in sub_indexes]
 
         self.augmentor = Augmentor(
@@ -184,7 +184,7 @@ class CREStereoDataset(Dataset):
             return None
         return disp.astype(np.float32) / 32
 
-    def __getitem__(self, index):
+    def get_item_paths(self, index):
         # find path
         left_path = self.imgs[index]
         prefix = left_path[: left_path.rfind("_")]
@@ -192,29 +192,40 @@ class CREStereoDataset(Dataset):
         left_disp_path = prefix + "_left.disp.png"
         right_disp_path = prefix + "_right.disp.png"
 
-        # read img, disp
-        left_img = cv2.imread(left_path, cv2.IMREAD_COLOR)
-        right_img = cv2.imread(right_path, cv2.IMREAD_COLOR)
-        if left_img is None or right_img is None:
-            return {
-                "left": [],
-                "right": [],
-                "disparity": [],
-                "mask": [],
-            }
+        prefix = prefix[0] if isinstance(prefix, list) else prefix
+        file_sources = {
+            "left_path": left_path,
+            "prefix": os.path.basename(prefix),
+            "right_path": right_path,
+            "left_disp_path": left_disp_path,
+            "right_disp_path": right_disp_path
+        }
 
-        left_disp = self.get_disp(left_disp_path)
-        right_disp = self.get_disp(right_disp_path)
+        return file_sources
+
+    def get_item(self, file_sources):
+        # read img, disp
+        left_img = cv2.imread(file_sources['left_path'], cv2.IMREAD_COLOR)
+        right_img = cv2.imread(file_sources['right_path'], cv2.IMREAD_COLOR)
+        if left_img is None or right_img is None:
+            return None, None, None, None
+
+        left_disp = self.get_disp(file_sources['left_disp_path'])
+        right_disp = None if file_sources['right_disp_path'] == "" else self.get_disp(file_sources['right_disp_path'])
         if left_disp is None or right_disp is None:
-            return {
-                "left": [],
-                "right": [],
-                "disparity": [],
-                "mask": [],
-            }
+            return None, None, None, None
+
+        return left_img, right_img, left_disp, right_disp
+
+    def __getitem__(self, index):
+        file_sources = self.get_item_paths(index)
+        left_img, right_img, left_disp, right_disp = self.get_item(file_sources)
+
+        if left_img is None or right_img is None or left_disp is None or right_disp is None:
+            return {"left": [], "right": [], "disparity": [], "mask": []}
 
         if not self.eval_mode:
-            if self.rng.binomial(1, 0.5):
+            if right_disp is not None and self.rng.binomial(1, 0.5):
                 left_img, right_img = np.fliplr(right_img), np.fliplr(left_img)
                 left_disp, right_disp = np.fliplr(right_disp), np.fliplr(left_disp)
             left_disp[left_disp == np.inf] = 0
@@ -231,14 +242,6 @@ class CREStereoDataset(Dataset):
         left_img = left_img.transpose(2, 0, 1).astype("uint8")
         right_img = right_img.transpose(2, 0, 1).astype("uint8")
 
-        prefix = prefix[0] if isinstance(prefix, list) else prefix
-        file_sources = {
-            "left_path": left_path,
-            "prefix": os.path.basename(prefix),
-            "right_path": right_path,
-            "left_disp_path": left_disp_path,
-            "right_disp_path": right_disp_path
-        }
         return {
             "file_source": file_sources,
             "left": left_img,
