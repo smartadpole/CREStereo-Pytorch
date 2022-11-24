@@ -94,6 +94,7 @@ def WriteDepth(predict_np, limg, path, name, bf):
     output_concat_color = os.path.join(path, "concat_color", name)
     output_concat_gray = os.path.join(path, "concat_gray", name)
     output_gray = os.path.join(path, "gray", name)
+    output_depth = os.path.join(path, "depth", name)
     output_color = os.path.join(path, "color", name)
     output_concat_depth = os.path.join(path, "concat_depth", name)
     output_concat = os.path.join(path, "concat", name)
@@ -101,6 +102,7 @@ def WriteDepth(predict_np, limg, path, name, bf):
     MkdirSimple(output_concat_gray)
     MkdirSimple(output_concat_depth)
     MkdirSimple(output_gray)
+    MkdirSimple(output_depth)
     MkdirSimple(output_color)
     MkdirSimple(output_concat)
 
@@ -121,6 +123,7 @@ def WriteDepth(predict_np, limg, path, name, bf):
     cv2.imwrite(output_concat_gray, concat_img_gray)
     cv2.imwrite(output_color, color_img)
     cv2.imwrite(output_gray, predict_np)
+    cv2.imwrite(output_depth, depth_img_rgb)
     cv2.imwrite(output_concat_depth, concat_img_depth)
     cv2.imwrite(output_concat, concat)
 
@@ -145,9 +148,6 @@ def main():
     model = Model(max_disp=256, mixed_precision=False, test_mode=True)
 
     print('Number of model parameters: {}'.format(sum([p.data.nelement() for p in model.parameters()])))
-    if use_cuda:
-        model.cuda()
-    model.eval()
 
     ckpt = torch.load(args.model_file)
 
@@ -157,8 +157,13 @@ def main():
             name = k[7:]  # remove `module.`
             model_state_dict[name] = v
     else:
-        model.load_state_dict(ckpt)
-    # model.load_state_dict(torch.load(args.model_file), strict=True)
+        model_state_dict = ckpt
+
+    model.load_state_dict(model_state_dict, strict=True)
+
+    if use_cuda:
+        model.cuda()
+    model.eval()
 
     for left_image_file, right_image_file in tzip(left_files, right_files):
         if not os.path.exists(left_image_file) or not os.path.exists(right_image_file):
