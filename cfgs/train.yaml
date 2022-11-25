@@ -5,17 +5,17 @@ base_lr: 4.0e-4
 nr_gpus: 1
 batch_size: 3
 n_total_epoch: 600
-minibatch_per_epoch: 1333
+minibatch_per_epoch: 1000
 
 loadmodel: ~
-log_dir: "/work/model/depth/stereo/CREStereo/v1.0.0/train_log"
+log_dir: "/work/model/depth/stereo/CREStereo/v1.1.0/train_log"
 model_save_freq_epoch: 1
 
 max_disp: 256
 image_width: 512
 image_height: 384
-training_data_path: "/online/DEPTH/crestereo_dataset"
-dataset: crestereo
+training_data_path: "/online/DEPTH/SceneFlow/"
+dataset: sceneflow
 #training_data_path: "/online/DEPTH/KITTI_monodepth2/origin"
 #dataset: kitti
 

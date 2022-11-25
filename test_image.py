@@ -106,15 +106,17 @@ def WriteDepth(predict_np, limg, path, name, bf):
     MkdirSimple(output_color)
     MkdirSimple(output_concat)
 
-    predict_np = predict_np.astype(np.uint8)
-    color_img = cv2.applyColorMap(predict_np, cv2.COLORMAP_HOT)
+    depth_img = bf / predict_np * 100  # to cm
+
+    predict_np_int = predict_np.astype(np.uint8)
+    color_img = cv2.applyColorMap(predict_np_int, cv2.COLORMAP_HOT)
     limg_cv = limg # cv2.cvtColor(np.asarray(limg), cv2.COLOR_RGB2BGR)
     concat_img_color = np.vstack([limg_cv, color_img])
     predict_np_rgb = np.stack([predict_np, predict_np, predict_np], axis=2)
     concat_img_gray = np.vstack([limg_cv, predict_np_rgb])
 
     # get depth
-    depth_img = bf / predict_np * 100  # to cm
+    depth_img_temp = bf / predict_np_int * 100  # to cm
     depth_img_rgb = GetDepthImg(depth_img)
     concat_img_depth = np.vstack([limg_cv, depth_img_rgb])
     concat = np.hstack([np.vstack([limg_cv, color_img]), np.vstack([predict_np_rgb, depth_img_rgb])])

@@ -12,6 +12,7 @@ from tensorboardX import SummaryWriter
 from nets import Model
 from dataset.dataset import CREStereoDataset
 from dataset.KITTI import KITTIDataset
+from dataset.sceneflow_loader import SceneFlow, sf_loader_walk
 
 import torch
 import torch.nn as nn
@@ -179,25 +180,32 @@ def main(args):
         dataset_type = KITTIDataset
     elif 'crestereo' == args.dataset:
         dataset_type = CREStereoDataset
+    elif 'sceneflow' == args.dataset:
+        dataset_type = SceneFlow
     else:
         print("donot support dataset type: {}".format(args.dataset))
         return
 
-    dataset = dataset_type(args.training_data_path)
-
-    # Creating data indices for training and validation splits:
-    dataset_size = len(dataset)
-    indices = list(range(dataset_size))
-    validation_split = .05
-    split = int(np.floor(validation_split * dataset_size))
-
-    np.random.seed(1234)
-    np.random.shuffle(indices)
-    train_indices, val_indices = indices[split:], indices[:split]
-
     # Creating PT data samplers and loaders:
-    dataset_train = dataset_type(args.training_data_path, sub_indexes=train_indices)
-    dataset_eval = dataset_type(args.training_data_path, sub_indexes=val_indices, eval_mode=True)  # No augmentation
+    if 'sceneflow' == args.dataset:
+        all_limg, all_rimg, all_ldisp, test_limg, test_rimg, test_ldisp = sf_loader_walk(args.training_data_path)
+        dataset_train = dataset_type(all_limg, all_rimg, all_ldisp, training=True)
+        dataset_eval = dataset_type(test_limg, test_rimg, test_ldisp, training=False)
+    else:
+        dataset = dataset_type(args.training_data_path)
+
+        # Creating data indices for training and validation splits:
+        dataset_size = len(dataset)
+        indices = list(range(dataset_size))
+        validation_split = .05
+        split = int(np.floor(validation_split * dataset_size))
+
+        np.random.seed(1234)
+        np.random.shuffle(indices)
+        train_indices, val_indices = indices[split:], indices[:split]
+
+        dataset_train = dataset_type(args.training_data_path, sub_indexes=train_indices)
+        dataset_eval = dataset_type(args.training_data_path, sub_indexes=val_indices, eval_mode=True)  # No augmentation
 
     # if rank == 0:
     worklog.info(f"Dataset size: {len(dataset_train)}")

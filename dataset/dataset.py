@@ -72,7 +72,9 @@ class Augmentor:
             )
 
         # 2.2) random resize
+        base_scale = min(self.image_height / left_img.shape[0], self.image_width / left_img.shape[1])
         resize_scale = self.rng.uniform(self.scale_min, self.scale_max)
+        resize_scale *= base_scale
 
         left_img = cv2.resize(
             left_img,
@@ -221,7 +223,7 @@ class CREStereoDataset(Dataset):
         file_sources = self.get_item_paths(index)
         left_img, right_img, left_disp, right_disp = self.get_item(file_sources)
 
-        if left_img is None or right_img is None or left_disp is None or right_disp is None:
+        if left_img is None or right_img is None or left_disp is None:
             return {"left": [], "right": [], "disparity": [], "mask": []}
 
         if not self.eval_mode:
