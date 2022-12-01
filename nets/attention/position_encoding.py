@@ -38,4 +38,6 @@ class PositionEncodingSine(nn.Module):
         Args:
             x: [N, C, H, W]
         """
-        return x + self.pe[:, :, :x.size(2), :x.size(3)].to(x.device)
+
+        pe = self.pe[:, :, :x.size(2), :x.size(3)].to(x.device)
+        return x + pe

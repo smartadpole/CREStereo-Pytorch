@@ -54,7 +54,8 @@ class CREStereo(nn.Module):
         )
         self.range_16 = 1
         self.range_8 = 1
-
+        self.mean = torch.Tensor([[[0.485, 0.456, 0.406]]]).T.cuda()
+        self.std = torch.Tensor([[[0.229, 0.224, 0.225]]]).T.cuda()
     def freeze_bn(self):
         for m in self.modules():
             if isinstance(m, nn.BatchNorm2d):
@@ -84,9 +85,10 @@ class CREStereo(nn.Module):
     def forward(self, image1, image2, flow_init=None, iters=10, upsample=True, test_mode=False):
         """ Estimate optical flow between pair of frames """
 
-        image1 = 2 * (image1 / 255.0) - 1.0
-        image2 = 2 * (image2 / 255.0) - 1.0
-
+        image1 = torch.div(torch.sub((image1 / 255.0), self.mean), self.std)
+        image2 = torch.div(torch.sub((image2 / 255.0), self.mean), self.std)
+        image1 = 2 * image1 - 1.0
+        image2 = 2 * image2 - 1.0
         image1 = image1.contiguous()
         image2 = image2.contiguous()
 

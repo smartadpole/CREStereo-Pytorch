@@ -165,7 +165,10 @@ class Augmentor:
 class CREStereoDataset(Dataset):
     def __init__(self, root, sub_indexes: Optional[np.ndarray] = None, eval_mode: bool = False):
         super().__init__()
-        self.imgs = glob.glob(os.path.join(root, "**/*_left.jpg"), recursive=True)
+        if os.path.exists(os.path.join(root, 'all_left.txt')):
+            self.imgs = [l.strip('\n').strip() for l in open(os.path.join(root, 'all_left.txt')).readlines()]
+        else:
+            self.imgs = glob.glob(os.path.join(root, "**/*_left.jpg"), recursive=True)
         if sub_indexes is not None and len(self.imgs) > 0:
             self.imgs = [self.imgs[idx] for idx in sub_indexes]
 

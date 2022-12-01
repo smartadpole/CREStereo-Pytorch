@@ -1,7 +1,6 @@
 import os
 from PIL import Image
 from dataset import readpfm as rp
-import torchvision.transforms as transforms
 from file import Walk
 import cv2
 from dataset.dataset import CREStereoDataset
@@ -17,7 +16,10 @@ def is_image_file(filename):
 
 
 def sf_loader_walk(filepath):
-    all_file = Walk(filepath, ['jpg', 'jpeg', 'png', 'bmp', 'pfm'])
+    if os.path.exists(os.path.join(filepath, 'all.txt')):
+        all_file = [l.strip('\n').strip() for l in open(os.path.join(filepath, 'all.txt')).readlines()]
+    else:
+        all_file = Walk(filepath, ['jpg', 'jpeg', 'png', 'bmp', 'pfm'])
 
     all_left_img = [f for f in all_file if "/left/" in f and "/frames_cleanpass/" in f]
 
@@ -62,12 +64,6 @@ class SceneFlow(CREStereoDataset):
         self.imgloader = imgloader
         self.dploader = dploader
         self.training = training
-        self.img_transorm = transforms.Compose([
-            transforms.ToTensor(),
-            transforms.Normalize([0., 0., 0.], [0., 0., 0.])]
-            # transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])]
-        )
-
 
     def get_item_paths(self, index):
         # find path
@@ -96,7 +92,7 @@ class SceneFlow(CREStereoDataset):
         if left_disp is None:
             return None, None, None, None
 
-        return left_img, right_img, left_disp, None
+        return left_img, right_img, left_disp.copy(), None
 
     def __len__(self):
         return len(self.left)

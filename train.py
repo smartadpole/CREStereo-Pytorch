@@ -23,6 +23,11 @@ from torch.utils.data import DataLoader
 from torch.nn import functional as F
 from mpl_toolkits.axes_grid1 import make_axes_locatable
 
+DATASET_TYPE = {
+    'kitti': KITTIDataset
+    , 'crestereo': CREStereoDataset
+    , 'sceneflow': SceneFlow
+}
 
 def parse_yaml(file_path: str) -> namedtuple:
     """Parse yaml configuration file and return the object in `namedtuple`."""
@@ -104,9 +109,129 @@ def inference_eval(left, right, model, n_iter=20, init_flow=True):
             pred_flow_dw2 = model(imgL_dw2, imgR_dw2, iters=n_iter, flow_init=None)
             pred_flow = model(imgL, imgR, iters=n_iter, flow_init=pred_flow_dw2[-1])
         else:
-            pred_flow = model(imgL, imgR, iters=n_iter, flow_init=None)
+            pred_flow = model(imgL, imgR, iters=n_iter, flow_init=None, test_mode=True)
 
     return pred_flow
+
+def eval_model(model, tb_log, worklog, epoch_idx, eval_iters, start_iters, total_iters, t0, dataloader_valid, minibatch_per_epoch, epoch_total_eval_loss):
+    ##################
+    ###  Evaluation  #
+    ##################
+    if epoch_idx % 50 == 0:
+        t1_eval = time.perf_counter()
+        for batch_idx, mini_batch_data in enumerate(dataloader_valid):
+            if batch_idx % minibatch_per_epoch == 0 and batch_idx != 0:
+                break
+            if len(mini_batch_data["left"]) == 0:
+                continue
+
+            eval_iters += 1
+
+            # parse data
+            left, right, gt_disp, valid_mask = (
+                mini_batch_data["left"],
+                mini_batch_data["right"],
+                mini_batch_data["disparity"].cuda(),
+                mini_batch_data["mask"].cuda(),
+            )
+
+            # pre-process
+            gt_disp = torch.unsqueeze(gt_disp, dim=1)  # [2, h, w] -> [2, 1, h, w]
+            gt_flow = torch.cat([gt_disp, gt_disp * 0], dim=1)  # [2, 2, h, w]
+
+            model.eval()
+            pred_eval = inference_eval(left.cuda(), right.cuda(), model, n_iter=20, init_flow=False)
+            t2_eval = time.perf_counter()
+
+            loss_eval = sequence_loss(
+                pred_eval, gt_flow, valid_mask, gamma=args.gamma
+            )
+            t3_eval = time.perf_counter()
+
+            if batch_idx % (minibatch_per_epoch // 50) == 0:
+                plt.close()
+                pred_final = torch.squeeze(pred_eval[-1][0, 0, :, :])
+                left_img = torch.squeeze(left[0, :, :, :]).permute(1, 2, 0)
+
+                fig, axes = plt.subplots(2, 2, figsize=(12, 10))
+                im = axes[0, 0].imshow(np.squeeze(gt_disp[0, :, :, :].cpu().numpy()))
+                axes[0, 0].set_title("disparity")
+
+                divider = make_axes_locatable(axes[0, 0])
+                cax = divider.append_axes("right", size="5%", pad=0.05)
+                plt.colorbar(im, cax=cax)
+
+                im = axes[0, 1].imshow(np.squeeze(pred_final.cpu().numpy()))
+                axes[0, 1].set_title(f"pred disparity: {loss_eval.data.item():.02f}")
+                divider = make_axes_locatable(axes[0, 1])
+                cax = divider.append_axes("right", size="5%", pad=0.05)
+                plt.colorbar(im, cax=cax)
+
+                axes[1, 0].imshow(np.squeeze(left_img.cpu().numpy()))
+                axes[1, 0].set_title("left")
+
+                pred_diff = np.squeeze(gt_disp[0, :, :, :].cpu().numpy()) - np.squeeze(pred_final.cpu().numpy())
+                valid = np.squeeze(valid_mask[0, :, :].cpu().numpy()).astype(bool)
+                pred_diff[~valid] = np.nan
+                im = axes[1, 1].imshow(np.squeeze(pred_diff))
+                axes[1, 1].set_title("error")
+
+                divider = make_axes_locatable(axes[1, 1])
+                cax = divider.append_axes("right", size="5%", pad=0.05)
+                plt.colorbar(im, cax=cax)
+
+                plt.tight_layout()
+
+                prefix = mini_batch_data["file_source"]["prefix"][0]
+
+                tb_log.add_figure(f"Evaluation/{prefix}", fig,
+                                  global_step=epoch_idx * len(dataloader_valid) + batch_idx)
+
+            loss_item_eval = loss_eval.data.item()
+            epoch_total_eval_loss += loss_item_eval
+
+            if eval_iters % 10 == 0:
+                tdata = t2_eval - t1_eval
+                time_eval_passed = t3_eval - t0
+                time_iter_passed = t3_eval - t1_eval
+                step_passed = eval_iters - start_iters
+                eta = (
+                        (total_iters - eval_iters)
+                        / max(step_passed, 1e-7)
+                        * time_eval_passed
+                )
+
+                meta_info = list()
+                meta_info.append("{:.2g} b/s".format(1.0 / time_eval_passed))
+                meta_info.append("passed:{}".format(format_time(time_iter_passed)))
+                meta_info.append("eta:{}".format(format_time(eta)))
+                meta_info.append(
+                    "data_time:{:.2g}".format(tdata / time_eval_passed)
+                )
+
+                meta_info.append(
+                    "[{}/{}:{}/{}]".format(
+                        epoch_idx,
+                        args.n_total_epoch,
+                        batch_idx,
+                        minibatch_per_epoch,
+                    )
+                )
+                loss_info = [" ==> {}:{:.4g}".format("eval loss", loss_item_eval)]
+                # exp_name = ['\n' + os.path.basename(os.getcwd())]
+
+                info = [",".join(meta_info)] + loss_info
+                worklog.info("".join(info))
+
+            t1_eval = time.perf_counter()
+
+            tb_log.add_scalar(
+                "valid/loss",
+                epoch_total_eval_loss / minibatch_per_epoch,
+                epoch_idx,
+            )
+
+    return eval_iters, epoch_total_eval_loss
 
 
 def main(args):
@@ -176,42 +301,50 @@ def main(args):
         start_iters = 0
 
     # datasets
-    if 'kitti' == args.dataset:
-        dataset_type = KITTIDataset
-    elif 'crestereo' == args.dataset:
-        dataset_type = CREStereoDataset
-    elif 'sceneflow' == args.dataset:
-        dataset_type = SceneFlow
-    else:
-        print("donot support dataset type: {}".format(args.dataset))
-        return
+    datasets_train = []
+    dataset_eval = None
+    if not isinstance(args.dataset, list):
+        args.dataset = [args.dataset, ]
+    if not isinstance(args.training_data_path, list):
+        args.training_data_path = [args.training_data_path, ]
+    if not isinstance(args.minibatch_per_epoch, list):
+        args.minibatch_per_epoch = [args.minibatch_per_epoch, ]
+
+    for i, type in enumerate(args.dataset):
+        if type not in DATASET_TYPE.keys():
+            print("donot support dataset type: {}".format(args.dataset))
+            return
+
+        if 'sceneflow' == type:
+            all_limg, all_rimg, all_ldisp, test_limg, test_rimg, test_ldisp = sf_loader_walk(args.training_data_path[i])
+            datasets_train.append(DATASET_TYPE[type](all_limg, all_rimg, all_ldisp, training=True))
+            dataset_eval = DATASET_TYPE[type](test_limg, test_rimg, test_ldisp, training=False)
+        else:
+            if 'sceneflow' in args.dataset:
+                datasets_train.append(DATASET_TYPE[type](args.training_data_path[i]))
+            else:
+                dataset = DATASET_TYPE[type](args.training_data_path[i])
+
+                # Creating data indices for training and validation splits:
+                dataset_size = len(dataset)
+                indices = list(range(dataset_size))
+                validation_split = .05
+                split = int(np.floor(validation_split * dataset_size))
+
+                np.random.seed(1234)
+                np.random.shuffle(indices)
+                train_indices, val_indices = indices[split:], indices[:split]
+
+                datasets_train.append(DATASET_TYPE[type](args.training_data_path[i], sub_indexes=train_indices))
+                dataset_eval = DATASET_TYPE[type](args.training_data_path[i], sub_indexes=val_indices, eval_mode=True)  # No augmentation
 
     # Creating PT data samplers and loaders:
-    if 'sceneflow' == args.dataset:
-        all_limg, all_rimg, all_ldisp, test_limg, test_rimg, test_ldisp = sf_loader_walk(args.training_data_path)
-        dataset_train = dataset_type(all_limg, all_rimg, all_ldisp, training=True)
-        dataset_eval = dataset_type(test_limg, test_rimg, test_ldisp, training=False)
-    else:
-        dataset = dataset_type(args.training_data_path)
-
-        # Creating data indices for training and validation splits:
-        dataset_size = len(dataset)
-        indices = list(range(dataset_size))
-        validation_split = .05
-        split = int(np.floor(validation_split * dataset_size))
-
-        np.random.seed(1234)
-        np.random.shuffle(indices)
-        train_indices, val_indices = indices[split:], indices[:split]
-
-        dataset_train = dataset_type(args.training_data_path, sub_indexes=train_indices)
-        dataset_eval = dataset_type(args.training_data_path, sub_indexes=val_indices, eval_mode=True)  # No augmentation
 
     # if rank == 0:
-    worklog.info(f"Dataset size: {len(dataset_train)}")
-    dataloader_train = DataLoader(dataset_train, args.batch_size, shuffle=True,
+    worklog.info(f"Dataset size: {sum([len(d) for d in datasets_train])}")
+    dataloader_train = [DataLoader(d, args.batch_size, shuffle=True,
                                   num_workers=args.num_works, drop_last=True, persistent_workers=False,
-                                  pin_memory=True)
+                                  pin_memory=True) for d in datasets_train]
     dataloader_valid = DataLoader(dataset_eval, args.batch_size, shuffle=True,
                                   num_workers=args.num_works, drop_last=True, persistent_workers=False,
                                   pin_memory=True)
@@ -219,7 +352,8 @@ def main(args):
     # counter
     cur_iters = start_iters
     eval_iters = start_iters
-    total_iters = args.minibatch_per_epoch * args.n_total_epoch
+    minibatch_per_epoch = sum(args.minibatch_per_epoch)
+    total_iters = minibatch_per_epoch * args.n_total_epoch
     t0 = time.perf_counter()
     for epoch_idx in range(start_epoch_idx, args.n_total_epoch + 1):
         torch.manual_seed(args.seed + epoch_idx)
@@ -232,93 +366,87 @@ def main(args):
 
         t1 = time.perf_counter()
 
-        # for mini_batch_data in dataloader:
-        for batch_idx, mini_batch_data in enumerate(dataloader_train):
-
-            if batch_idx % args.minibatch_per_epoch == 0 and batch_idx != 0:
-                break
-            if len(mini_batch_data["left"]) == 0:
-                continue
-
-            cur_iters += 1
-
-            # parse data
-            left, right, gt_disp, valid_mask = (
-                mini_batch_data["left"],
-                mini_batch_data["right"],
-                mini_batch_data["disparity"].cuda(),
-                mini_batch_data["mask"].cuda(),
-            )
-
-            t2 = time.perf_counter()
-            optimizer.zero_grad()
-
-            # pre-process
-            gt_disp = torch.unsqueeze(gt_disp, dim=1)  # [2, h, w] -> [2, 1, h, w]
-            gt_flow = torch.cat([gt_disp, gt_disp * 0], dim=1)  # [2, 2, h, w]
-
-            # forward
-            flow_predictions = model(left.cuda(), right.cuda())
-
-            # loss & backword
-            loss = sequence_loss(
-                flow_predictions, gt_flow, valid_mask, gamma=args.gamma
-            )
-
-            # loss stats
-            loss_item = loss.data.item()
-            epoch_total_train_loss += loss_item
-            loss.backward()
-            optimizer.step()
-            t3 = time.perf_counter()
-
-            if cur_iters % 10 == 0:
-                tdata = t2 - t1
-                time_train_passed = t3 - t0
-                time_iter_passed = t3 - t1
-                step_passed = cur_iters - start_iters
-                eta = (
-                        (total_iters - cur_iters)
-                        / max(step_passed, 1e-7)
-                        * time_train_passed
-                )
-
-                meta_info = list()
-                meta_info.append("{:.2g} b/s".format(1.0 / time_iter_passed))
-                meta_info.append("passed:{}".format(format_time(time_train_passed)))
-                meta_info.append("eta:{}".format(format_time(eta)))
-                meta_info.append(
-                    "data_time:{:.2g}".format(tdata / time_iter_passed)
-                )
-
-                meta_info.append(
-                    "lr:{:.5g}".format(optimizer.param_groups[0]["lr"])
-                )
-                meta_info.append(
-                    "[{}/{}:{}/{}]".format(
-                        epoch_idx,
-                        args.n_total_epoch,
-                        batch_idx,
-                        args.minibatch_per_epoch,
-                    )
-                )
-                loss_info = [" ==> {}:{:.4g}".format("loss", loss_item)]
-                # exp_name = ['\n' + os.path.basename(os.getcwd())]
-
-                info = [",".join(meta_info)] + loss_info
-                worklog.info("".join(info))
-
-                # minibatch loss
-                tb_log.add_scalar("train/loss_batch", loss_item, cur_iters)
-                tb_log.add_scalar(
-                    "train/lr", optimizer.param_groups[0]["lr"], cur_iters
-                )
-                tb_log.flush()
-
-            t1 = time.perf_counter()
-
-
         epoch_total_eval_loss = 0.
+        # eval_iters, epoch_total_eval_loss = eval_model(model, tb_log, worklog, epoch_idx, eval_iters, start_iters,
+        #                                          total_iters, t0, dataloader_valid,
+        #                                          minibatch_per_epoch, epoch_total_eval_loss)
+
+        # for mini_batch_data in dataloader:
+        batch_idx = -1
+        for id_data, dl in enumerate(dataloader_train):
+            for sub_batch_idx, mini_batch_data in enumerate(dl):
+                batch_idx += 1
+                if sub_batch_idx % args.minibatch_per_epoch[id_data] == 0 and sub_batch_idx != 0:
+                    break
+                if len(mini_batch_data["left"]) == 0:
+                    continue
+
+                cur_iters += 1
+
+                # parse data
+                left, right, gt_disp, valid_mask = (
+                    mini_batch_data["left"],
+                    mini_batch_data["right"],
+                    mini_batch_data["disparity"].cuda(),
+                    mini_batch_data["mask"].cuda(),
+                )
+
+                t2 = time.perf_counter()
+                optimizer.zero_grad()
+
+                # pre-process
+                gt_disp = torch.unsqueeze(gt_disp, dim=1)  # [2, h, w] -> [2, 1, h, w]
+                gt_flow = torch.cat([gt_disp, gt_disp * 0], dim=1)  # [2, 2, h, w]
+
+                # forward
+                flow_predictions = model(left.cuda(), right.cuda())
+
+                # loss & backword
+                loss = sequence_loss(
+                    flow_predictions, gt_flow, valid_mask, gamma=args.gamma
+                )
+
+                # loss stats
+                loss_item = loss.data.item()
+                epoch_total_train_loss += loss_item
+                loss.backward()
+                optimizer.step()
+                t3 = time.perf_counter()
+
+                if cur_iters % 10 == 0:
+                    tdata = t2 - t1
+                    time_train_passed = t3 - t0
+                    time_iter_passed = t3 - t1
+                    step_passed = cur_iters - start_iters
+                    eta = ((total_iters - cur_iters) / max(step_passed, 1e-7) * time_train_passed)
+
+                    meta_info = list()
+                    meta_info.append("{:.2g} b/s".format(1.0 / time_iter_passed))
+                    meta_info.append("passed:{}".format(format_time(time_train_passed)))
+                    meta_info.append("eta:{}".format(format_time(eta)))
+                    meta_info.append("data_time:{:.2g}".format(tdata / time_iter_passed))
+
+                    meta_info.append("lr:{:.5g}".format(optimizer.param_groups[0]["lr"]))
+                    meta_info.append(
+                        "[{}/{}:{}/{}]".format(epoch_idx, args.n_total_epoch, batch_idx, minibatch_per_epoch, ))
+                    loss_info = [" ==> {}:{:.4g}".format("loss", loss_item)]
+                    # exp_name = ['\n' + os.path.basename(os.getcwd())]
+
+                    info = [",".join(meta_info)] + loss_info
+                    worklog.info("".join(info))
+
+                    # minibatch loss
+                    tb_log.add_scalar("train/loss_batch", loss_item, cur_iters)
+                    tb_log.add_scalar("train/lr", optimizer.param_groups[0]["lr"], cur_iters)
+                    tb_log.flush()
+
+                t1 = time.perf_counter()
+
+        tb_log.add_scalar(
+            "train/loss",
+            epoch_total_train_loss / minibatch_per_epoch,
+            epoch_idx,
+        )
 
         # save model params
         ckp_data = {
@@ -326,9 +454,9 @@ def main(args):
             "iters": cur_iters,
             "eval_iters": eval_iters,
             "batch_size": args.batch_size,
-            "epoch_size": args.minibatch_per_epoch,
-            "train_loss": epoch_total_train_loss / args.minibatch_per_epoch,
-            "eval_loss": epoch_total_eval_loss / args.minibatch_per_epoch,
+            "epoch_size": minibatch_per_epoch,
+            "train_loss": epoch_total_train_loss / minibatch_per_epoch,
+            "eval_loss": epoch_total_eval_loss / minibatch_per_epoch,
             "state_dict": model.state_dict(),
             "optim_state_dict": optimizer.state_dict(),
         }
@@ -339,128 +467,9 @@ def main(args):
             worklog.info(f"Model params saved: {save_path}")
             torch.save(ckp_data, save_path)
 
-        ##################
-        ###  Evaluation  #
-        ##################
-        if epoch_idx % 50 == 0:
-            t1_eval = time.perf_counter()
-            for batch_idx, mini_batch_data in enumerate(dataloader_valid):
-                if batch_idx % args.minibatch_per_epoch == 0 and batch_idx != 0:
-                    break
-                if len(mini_batch_data["left"]) == 0:
-                    continue
+        # eval_iters, epoch_total_eval_loss = eval_model(model, tb_log, worklog, epoch_idx, eval_iters, start_iters, total_iters, t0, dataloader_valid,
+        #          minibatch_per_epoch, epoch_total_eval_loss)
 
-                eval_iters += 1
-
-                # parse data
-                left, right, gt_disp, valid_mask = (
-                    mini_batch_data["left"],
-                    mini_batch_data["right"],
-                    mini_batch_data["disparity"].cuda(),
-                    mini_batch_data["mask"].cuda(),
-                )
-
-                # pre-process
-                gt_disp = torch.unsqueeze(gt_disp, dim=1)  # [2, h, w] -> [2, 1, h, w]
-                gt_flow = torch.cat([gt_disp, gt_disp * 0], dim=1)  # [2, 2, h, w]
-
-                model.eval()
-                pred_eval = inference_eval(left.cuda(), right.cuda(), model, n_iter=20)
-                t2_eval = time.perf_counter()
-
-                loss_eval = sequence_loss(
-                    pred_eval, gt_flow, valid_mask, gamma=args.gamma
-                )
-                t3_eval = time.perf_counter()
-
-                if batch_idx % (args.minibatch_per_epoch // 50) == 0:
-                    plt.close()
-                    pred_final = torch.squeeze(pred_eval[-1][0, 0, :, :])
-                    left_img = torch.squeeze(left[0, :, :, :]).permute(1, 2, 0)
-
-                    fig, axes = plt.subplots(2, 2, figsize=(12, 10))
-                    im = axes[0, 0].imshow(np.squeeze(gt_disp[0, :, :, :].cpu().numpy()))
-                    axes[0, 0].set_title("disparity")
-
-                    divider = make_axes_locatable(axes[0, 0])
-                    cax = divider.append_axes("right", size="5%", pad=0.05)
-                    plt.colorbar(im, cax=cax)
-
-                    im = axes[0, 1].imshow(np.squeeze(pred_final.cpu().numpy()))
-                    axes[0, 1].set_title(f"pred disparity: {loss_eval.data.item():.02f}")
-                    divider = make_axes_locatable(axes[0, 1])
-                    cax = divider.append_axes("right", size="5%", pad=0.05)
-                    plt.colorbar(im, cax=cax)
-
-                    axes[1, 0].imshow(np.squeeze(left_img.cpu().numpy()))
-                    axes[1, 0].set_title("left")
-
-                    pred_diff = np.squeeze(gt_disp[0, :, :, :].cpu().numpy()) - np.squeeze(pred_final.cpu().numpy())
-                    valid = np.squeeze(valid_mask[0, :, :].cpu().numpy()).astype(bool)
-                    pred_diff[~valid] = np.nan
-                    im = axes[1, 1].imshow(np.squeeze(pred_diff))
-                    axes[1, 1].set_title("error")
-
-                    divider = make_axes_locatable(axes[1, 1])
-                    cax = divider.append_axes("right", size="5%", pad=0.05)
-                    plt.colorbar(im, cax=cax)
-
-                    plt.tight_layout()
-
-                    prefix = mini_batch_data["file_source"]["prefix"][0]
-
-                    tb_log.add_figure(f"Evaluation/{prefix}", fig,
-                                      global_step=epoch_idx * len(dataloader_valid) + batch_idx)
-
-                loss_item_eval = loss_eval.data.item()
-                epoch_total_eval_loss += loss_item_eval
-
-                if eval_iters % 10 == 0:
-                    tdata = t2_eval - t1_eval
-                    time_eval_passed = t3_eval - t0
-                    time_iter_passed = t3_eval - t1_eval
-                    step_passed = eval_iters - start_iters
-                    eta = (
-                            (total_iters - eval_iters)
-                            / max(step_passed, 1e-7)
-                            * time_eval_passed
-                    )
-
-                    meta_info = list()
-                    meta_info.append("{:.2g} b/s".format(1.0 / time_eval_passed))
-                    meta_info.append("passed:{}".format(format_time(time_iter_passed)))
-                    meta_info.append("eta:{}".format(format_time(eta)))
-                    meta_info.append(
-                        "data_time:{:.2g}".format(tdata / time_eval_passed)
-                    )
-
-                    meta_info.append(
-                        "[{}/{}:{}/{}]".format(
-                            epoch_idx,
-                            args.n_total_epoch,
-                            batch_idx,
-                            args.minibatch_per_epoch,
-                        )
-                    )
-                    loss_info = [" ==> {}:{:.4g}".format("eval loss", loss_item_eval)]
-                    # exp_name = ['\n' + os.path.basename(os.getcwd())]
-
-                    info = [",".join(meta_info)] + loss_info
-                    worklog.info("".join(info))
-
-                t1_eval = time.perf_counter()
-
-                tb_log.add_scalar(
-                    "valid/loss",
-                    epoch_total_eval_loss / args.minibatch_per_epoch,
-                    epoch_idx,
-                    )
-
-        tb_log.add_scalar(
-            "train/loss",
-            epoch_total_train_loss / args.minibatch_per_epoch,
-            epoch_idx,
-            )
 
         tb_log.flush()
 
