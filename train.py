@@ -341,7 +341,7 @@ def main(args):
     # Creating PT data samplers and loaders:
 
     # if rank == 0:
-    worklog.info(f"Dataset size: {sum([len(d) for d in datasets_train])}")
+    worklog.info("Dataset size: {} = {}".format(sum([len(d) for d in datasets_train]), ' + '.join([str(len(d)) for d in datasets_train])))
     dataloader_train = [DataLoader(d, args.batch_size, shuffle=True,
                                   num_workers=args.num_works, drop_last=True, persistent_workers=False,
                                   pin_memory=True) for d in datasets_train]

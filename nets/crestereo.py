@@ -85,8 +85,8 @@ class CREStereo(nn.Module):
     def forward(self, image1, image2, flow_init=None, iters=10, upsample=True, test_mode=False):
         """ Estimate optical flow between pair of frames """
 
-        image1 = torch.div(torch.sub((image1 / 255.0), self.mean), self.std)
-        image2 = torch.div(torch.sub((image2 / 255.0), self.mean), self.std)
+        image1 = image1 / 255.0
+        image2 = image2 / 255.0
         image1 = 2 * image1 - 1.0
         image2 = 2 * image2 - 1.0
         image1 = image1.contiguous()
