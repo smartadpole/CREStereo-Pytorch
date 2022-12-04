@@ -1,8 +1,11 @@
+import datetime
 import os
+import shutil
 import sys
 import time
 import logging
 from collections import namedtuple
+from collections import OrderedDict
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -22,12 +25,15 @@ from torch.utils.data import DataLoader
 # from torch.utils.data.sampler import SubsetRandomSampler
 from torch.nn import functional as F
 from mpl_toolkits.axes_grid1 import make_axes_locatable
+import dataset.KITTI as kt
+from file import MkdirSimple
 
 DATASET_TYPE = {
-    'kitti': KITTIDataset
+    'kitti': SceneFlow
     , 'crestereo': CREStereoDataset
     , 'sceneflow': SceneFlow
 }
+
 
 def parse_yaml(file_path: str) -> namedtuple:
     """Parse yaml configuration file and return the object in `namedtuple`."""
@@ -79,6 +85,9 @@ def sequence_loss(flow_preds, flow_gt, valid, gamma=0.8):
     n_predictions = len(flow_preds)
     flow_loss = 0.0
     for i in range(n_predictions):
+        # todo : why not equal
+        if flow_preds[i].shape != flow_gt.shape:
+            continue
         i_weight = gamma ** (n_predictions - i - 1)
         i_loss = torch.abs(flow_preds[i] - flow_gt)
         flow_loss += i_weight * (valid.unsqueeze(1) * i_loss).mean()
@@ -86,7 +95,7 @@ def sequence_loss(flow_preds, flow_gt, valid, gamma=0.8):
     return flow_loss
 
 
-def inference_eval(left, right, model, n_iter=20, init_flow=True):
+def inference_eval(left, right, model, n_iter=20, init_flow=True, test_mode=False):
     # print("Model Forwarding...")
     imgL = left.type(torch.float32)
     imgR = right.type(torch.float32)
@@ -109,11 +118,36 @@ def inference_eval(left, right, model, n_iter=20, init_flow=True):
             pred_flow_dw2 = model(imgL_dw2, imgR_dw2, iters=n_iter, flow_init=None)
             pred_flow = model(imgL, imgR, iters=n_iter, flow_init=pred_flow_dw2[-1])
         else:
-            pred_flow = model(imgL, imgR, iters=n_iter, flow_init=None, test_mode=True)
+            pred_flow = model(imgL, imgR, iters=n_iter, flow_init=None, test_mode=test_mode)
 
     return pred_flow
 
-def eval_model(model, tb_log, worklog, epoch_idx, eval_iters, start_iters, total_iters, t0, dataloader_valid, minibatch_per_epoch, epoch_total_eval_loss):
+
+def test(model, imgL, imgR, disp_true):
+    model.eval()
+    imgL, imgR = imgL.cuda(), imgR.cuda()
+
+    with torch.no_grad():
+        pred_disp = model(imgL, imgR, iters=20, flow_init=None, test_mode=True)
+
+    final_disp = pred_disp.cpu()[:, 0, :, :]
+    true_disp = disp_true
+    index = np.argwhere(true_disp > 0)
+    print(index.shape)
+    print(true_disp.shape)
+    print(final_disp.shape)
+    disp_true[index[0], index[1], index[2]] = np.abs(
+        true_disp[index[0], index[1], index[2]] - final_disp[index[0], index[1], index[2]])
+    correct = (disp_true[index[0], index[1], index[2]] < 3) | \
+              (disp_true[index[0], index[1], index[2]] < true_disp[index[0], index[1], index[2]] * 0.05)
+
+    torch.cuda.empty_cache()
+
+    return 1 - (float(torch.sum(correct)) / float(len(index[0])))
+
+
+def eval_model(model, tb_log, worklog, epoch_idx, eval_iters, start_iters, total_iters, t0, dataloader_valid,
+               minibatch_per_epoch, epoch_total_eval_loss):
     ##################
     ###  Evaluation  #
     ##################
@@ -126,6 +160,7 @@ def eval_model(model, tb_log, worklog, epoch_idx, eval_iters, start_iters, total
                 continue
 
             eval_iters += 1
+            # loss = test(model, mini_batch_data["left"], mini_batch_data["right"], mini_batch_data["disparity"])
 
             # parse data
             left, right, gt_disp, valid_mask = (
@@ -148,7 +183,7 @@ def eval_model(model, tb_log, worklog, epoch_idx, eval_iters, start_iters, total
             )
             t3_eval = time.perf_counter()
 
-            if batch_idx % (minibatch_per_epoch // 50) == 0:
+            if batch_idx % (minibatch_per_epoch // 10) == 0:
                 plt.close()
                 pred_final = torch.squeeze(pred_eval[-1][0, 0, :, :])
                 left_img = torch.squeeze(left[0, :, :, :]).permute(1, 2, 0)
@@ -290,12 +325,21 @@ def main(args):
         # if rank == 0:
         worklog.info(f"loading model: {chk_path}")
         state_dict = torch.load(chk_path)
-        model.load_state_dict(state_dict['state_dict'])
-        optimizer.load_state_dict(state_dict['optim_state_dict'])
-        resume_epoch_idx = state_dict["epoch"]
-        resume_iters = state_dict["iters"]
-        start_epoch_idx = resume_epoch_idx + 1
-        start_iters = resume_iters
+        if 'state_dict' in state_dict.keys():
+            model.load_state_dict(state_dict['state_dict'])
+            optimizer.load_state_dict(state_dict['optim_state_dict'])
+            resume_epoch_idx = state_dict["epoch"]
+            resume_iters = state_dict["iters"]
+            start_epoch_idx = resume_epoch_idx + 1
+            start_iters = resume_iters
+        else:
+            start_epoch_idx = 1
+            start_iters = 0
+            model_state_dict = OrderedDict()
+            for k, v in state_dict.items():
+                name = 'module.' + k  # add `module.`
+                model_state_dict[name] = v
+            model.load_state_dict(model_state_dict)
     else:
         start_epoch_idx = 1
         start_iters = 0
@@ -303,27 +347,37 @@ def main(args):
     # datasets
     datasets_train = []
     dataset_eval = None
-    if not isinstance(args.dataset, list):
-        args.dataset = [args.dataset, ]
-    if not isinstance(args.training_data_path, list):
-        args.training_data_path = [args.training_data_path, ]
-    if not isinstance(args.minibatch_per_epoch, list):
-        args.minibatch_per_epoch = [args.minibatch_per_epoch, ]
 
-    for i, type in enumerate(args.dataset):
+    dataset_type_list = args.dataset
+    training_data_path_list = args.training_data_path
+    minibatch_per_epoch_list = args.minibatch_per_epoch
+    if not isinstance(args.dataset, list):
+        dataset_type_list = [args.dataset, ]
+    if not isinstance(training_data_path_list, list):
+        training_data_path_list = [training_data_path_list, ]
+    if not isinstance(minibatch_per_epoch_list, list):
+        minibatch_per_epoch_list = [minibatch_per_epoch_list, ]
+
+    for i, type in enumerate(dataset_type_list):
         if type not in DATASET_TYPE.keys():
-            print("donot support dataset type: {}".format(args.dataset))
+            print("donot support dataset type: {}".format(dataset_type_list))
             return
 
-        if 'sceneflow' == type:
-            all_limg, all_rimg, all_ldisp, test_limg, test_rimg, test_ldisp = sf_loader_walk(args.training_data_path[i])
+        if 'kitti' == type:
+            all_limg, all_rimg, all_ldisp, test_limg, test_rimg, test_ldisp = kt.kt_loader(training_data_path_list[i])
+            datasets_train.append(
+                DATASET_TYPE[type](all_limg, all_rimg, all_ldisp, training=True, dploader=kt.disparity_loader_real))
+            dataset_eval = DATASET_TYPE[type](test_limg, test_rimg, test_ldisp, training=False,
+                                              dploader=kt.disparity_loader_real)
+        elif 'sceneflow' == type:
+            all_limg, all_rimg, all_ldisp, test_limg, test_rimg, test_ldisp = sf_loader_walk(training_data_path_list[i])
             datasets_train.append(DATASET_TYPE[type](all_limg, all_rimg, all_ldisp, training=True))
-            dataset_eval = DATASET_TYPE[type](test_limg, test_rimg, test_ldisp, training=False)
+            # dataset_eval = DATASET_TYPE[type](test_limg, test_rimg, test_ldisp, training=False)
         else:
-            if 'sceneflow' in args.dataset:
-                datasets_train.append(DATASET_TYPE[type](args.training_data_path[i]))
+            if 'sceneflow' in dataset_type_list or 'kitti' in dataset_type_list:
+                datasets_train.append(DATASET_TYPE[type](training_data_path_list[i]))
             else:
-                dataset = DATASET_TYPE[type](args.training_data_path[i])
+                dataset = DATASET_TYPE[type](training_data_path_list[i])
 
                 # Creating data indices for training and validation splits:
                 dataset_size = len(dataset)
@@ -335,16 +389,18 @@ def main(args):
                 np.random.shuffle(indices)
                 train_indices, val_indices = indices[split:], indices[:split]
 
-                datasets_train.append(DATASET_TYPE[type](args.training_data_path[i], sub_indexes=train_indices))
-                dataset_eval = DATASET_TYPE[type](args.training_data_path[i], sub_indexes=val_indices, eval_mode=True)  # No augmentation
+                datasets_train.append(DATASET_TYPE[type](training_data_path_list[i], sub_indexes=train_indices))
+                dataset_eval = DATASET_TYPE[type](training_data_path_list[i], sub_indexes=val_indices,
+                                                  eval_mode=True)  # No augmentation
 
     # Creating PT data samplers and loaders:
 
     # if rank == 0:
-    worklog.info("Dataset size: {} = {}".format(sum([len(d) for d in datasets_train]), ' + '.join([str(len(d)) for d in datasets_train])))
+    worklog.info("Dataset size: {} = {}".format(sum([len(d) for d in datasets_train]),
+                                                ' + '.join([str(len(d)) for d in datasets_train])))
     dataloader_train = [DataLoader(d, args.batch_size, shuffle=True,
-                                  num_workers=args.num_works, drop_last=True, persistent_workers=False,
-                                  pin_memory=True) for d in datasets_train]
+                                   num_workers=args.num_works, drop_last=True, persistent_workers=False,
+                                   pin_memory=True) for d in datasets_train]
     dataloader_valid = DataLoader(dataset_eval, args.batch_size, shuffle=True,
                                   num_workers=args.num_works, drop_last=True, persistent_workers=False,
                                   pin_memory=True)
@@ -352,7 +408,7 @@ def main(args):
     # counter
     cur_iters = start_iters
     eval_iters = start_iters
-    minibatch_per_epoch = sum(args.minibatch_per_epoch)
+    minibatch_per_epoch = sum(minibatch_per_epoch_list)
     total_iters = minibatch_per_epoch * args.n_total_epoch
     t0 = time.perf_counter()
     for epoch_idx in range(start_epoch_idx, args.n_total_epoch + 1):
@@ -368,15 +424,15 @@ def main(args):
 
         epoch_total_eval_loss = 0.
         # eval_iters, epoch_total_eval_loss = eval_model(model, tb_log, worklog, epoch_idx, eval_iters, start_iters,
-        #                                          total_iters, t0, dataloader_valid,
-        #                                          minibatch_per_epoch, epoch_total_eval_loss)
+        #                                                total_iters, t0, dataloader_valid,
+        #                                                minibatch_per_epoch, epoch_total_eval_loss)
 
         # for mini_batch_data in dataloader:
         batch_idx = -1
         for id_data, dl in enumerate(dataloader_train):
             for sub_batch_idx, mini_batch_data in enumerate(dl):
                 batch_idx += 1
-                if sub_batch_idx % args.minibatch_per_epoch[id_data] == 0 and sub_batch_idx != 0:
+                if sub_batch_idx % minibatch_per_epoch_list[id_data] == 0 and sub_batch_idx != 0:
                     break
                 if len(mini_batch_data["left"]) == 0:
                     continue
@@ -467,9 +523,9 @@ def main(args):
             worklog.info(f"Model params saved: {save_path}")
             torch.save(ckp_data, save_path)
 
-        # eval_iters, epoch_total_eval_loss = eval_model(model, tb_log, worklog, epoch_idx, eval_iters, start_iters, total_iters, t0, dataloader_valid,
-        #          minibatch_per_epoch, epoch_total_eval_loss)
-
+        eval_iters, epoch_total_eval_loss = eval_model(model, tb_log, worklog, epoch_idx, eval_iters, start_iters,
+                                                       total_iters, t0, dataloader_valid,
+                                                       minibatch_per_epoch, epoch_total_eval_loss)
 
         tb_log.flush()
 
@@ -480,5 +536,10 @@ def main(args):
 
 if __name__ == "__main__":
     # train configuration
-    args = parse_yaml("cfgs/train.yaml")
+    config_file = "cfgs/train.yaml"
+    args = parse_yaml(config_file)
+    MkdirSimple(args.log_dir)
+    date = datetime.date.today().strftime("20%y-%m-%d_") + format_time(time.perf_counter())
+    shutil.copyfile(config_file, os.path.join(args.log_dir, 'train_{}.yaml'.format(date)))
+
     main(args)

@@ -85,6 +85,11 @@ def img_loader(path):
 def disparity_loader(path):
     return Image.open(path)
 
+def disparity_loader_real(path):
+    disp = disparity_loader(path)
+    disp = np.ascontiguousarray(disp, dtype=np.float32) / 256
+    return disp, 1
+
 
 class KITTIDataset(CREStereoDataset):
 

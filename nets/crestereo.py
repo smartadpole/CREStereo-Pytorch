@@ -254,7 +254,7 @@ class CREStereo(nn.Module):
             flow_up = -self.convex_upsample(flow, up_mask, rate=4)
             predictions.append(flow_up)
 
-        if self.test_mode:
+        if test_mode:
             return flow_up
 
         return predictions

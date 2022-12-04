@@ -10,13 +10,13 @@ from torch.utils.data import Dataset
 
 class Augmentor:
     def __init__(
-        self,
-        image_height=384,
-        image_width=512,
-        max_disp=256,
-        scale_min=0.6,
-        scale_max=1.0,
-        seed=0,
+            self,
+            image_height=384,
+            image_width=512,
+            max_disp=256,
+            scale_min=0.6,
+            scale_max=1.0,
+            seed=0,
     ):
         super().__init__()
         self.image_height = image_height
@@ -39,8 +39,8 @@ class Augmentor:
         img = enhancer.enhance(random_contrast)
 
         gamma_map = [
-            255 * 1.0 * pow(ele / 255.0, random_gamma) for ele in range(256)
-        ] * 3
+                        255 * 1.0 * pow(ele / 255.0, random_gamma) for ele in range(256)
+                    ] * 3
         img = img.point(gamma_map)  # use PIL's point-function to accelerate this part
 
         img_ = np.array(img)
@@ -102,14 +102,14 @@ class Augmentor:
         )
 
         left_disp = (
-            cv2.resize(
-                left_disp,
-                None,
-                fx=resize_scale,
-                fy=resize_scale,
-                interpolation=cv2.INTER_LINEAR,
-            )
-            * resize_scale
+                cv2.resize(
+                    left_disp,
+                    None,
+                    fx=resize_scale,
+                    fy=resize_scale,
+                    interpolation=cv2.INTER_LINEAR,
+                )
+                * resize_scale
         )
 
         # 2.3) random crop
@@ -155,7 +155,7 @@ class Augmentor:
             sy = int(self.rng.uniform(50, 100))
             cx = int(self.rng.uniform(sx, right_img.shape[0] - sx))
             cy = int(self.rng.uniform(sy, right_img.shape[1] - sy))
-            right_img[cx - sx : cx + sx, cy - sy : cy + sy] = np.mean(
+            right_img[cx - sx: cx + sx, cy - sy: cy + sy] = np.mean(
                 np.mean(right_img, 0), 0
             )[np.newaxis, np.newaxis]
 
@@ -228,6 +228,13 @@ class CREStereoDataset(Dataset):
 
         if left_img is None or right_img is None or left_disp is None:
             return {"left": [], "right": [], "disparity": [], "mask": []}
+
+        w = round(left_img.shape[1] / 4) * 4
+        h = round(left_img.shape[0] / 4) * 4
+        left_img = cv2.resize(left_img, (w, h), interpolation=cv2.INTER_LINEAR, )
+        right_img = cv2.resize(right_img, (w, h), interpolation=cv2.INTER_LINEAR, )
+        left_disp = cv2.resize(left_disp, (w, h), interpolation=cv2.INTER_LINEAR, )
+        right_disp = None if right_disp is None else cv2.resize(right_disp, (w, h), interpolation=cv2.INTER_LINEAR, )
 
         if not self.eval_mode:
             if right_disp is not None and self.rng.binomial(1, 0.5):
