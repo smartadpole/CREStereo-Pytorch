@@ -3,25 +3,25 @@ mixed_precision: false
 base_lr: 4.0e-4
 
 nr_gpus: 1
-batch_size: 3
-n_total_epoch: 600
-minibatch_per_epoch: [60, 50]
+batch_size: 6
+n_total_epoch: 300
+minibatch_per_epoch: [700, ]
 
-loadmodel: "/work/model/depth/stereo/CREStereo/crestereo_eth3d.pth"
-log_dir: "/work/model/depth/stereo/CREStereo/v1.3.0/train_log"
+loadmodel: ~
+log_dir: "/data/DEPTH/MODEL/stereo_model/CREStereo/v2.0.0/train_log"
 model_save_freq_epoch: 1
 
 max_disp: 256
 image_width: 512
 image_height: 384
 
-training_data_path: ["/auto_driving/image/KITTI/sceneflow/training", "/online/DEPTH/crestereo_dataset/"]
-dataset: [kitti, crestereo]
+training_data_path: ["/data/DEPTH/crestereo_dataset/",]
+dataset: [crestereo, ]
 #training_data_path: "/auto_driving/image/KITTI/sceneflow/training"
 #dataset: kitti
 
 log_level: "logging.INFO"
 
 gamma: 0.9
-num_works: 5
+num_works: 10
 

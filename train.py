@@ -43,12 +43,12 @@ def parse_yaml(file_path: str) -> namedtuple:
     return args
 
 
-def format_time(elapse):
+def format_time(elapse, flag=':'):
     elapse = int(elapse)
     hour = elapse // 3600
     minute = elapse % 3600 // 60
     seconds = elapse % 60
-    return "{:02d}:{:02d}:{:02d}".format(hour, minute, seconds)
+    return "{:02d}{}{:02d}{}{:02d}".format(hour, flag, minute, flag, seconds)
 
 
 def ensure_dir(path):
@@ -539,7 +539,7 @@ if __name__ == "__main__":
     config_file = "cfgs/train.yaml"
     args = parse_yaml(config_file)
     MkdirSimple(args.log_dir)
-    date = datetime.date.today().strftime("20%y-%m-%d_") + format_time(time.perf_counter())
+    date = datetime.datetime.now().strftime("20%y-%m-%d_%H-%M-%S")
     shutil.copyfile(config_file, os.path.join(args.log_dir, 'train_{}.yaml'.format(date)))
 
     main(args)

@@ -54,8 +54,8 @@ class CREStereo(nn.Module):
         )
         self.range_16 = 1
         self.range_8 = 1
-        self.mean = torch.Tensor([[[0.485, 0.456, 0.406]]]).T.cuda()
-        self.std = torch.Tensor([[[0.229, 0.224, 0.225]]]).T.cuda()
+        # self.mean = torch.Tensor([[[0.485, 0.456, 0.406]]]).T.cuda()
+        # self.std = torch.Tensor([[[0.229, 0.224, 0.225]]]).T.cuda()
     def freeze_bn(self):
         for m in self.modules():
             if isinstance(m, nn.BatchNorm2d):
