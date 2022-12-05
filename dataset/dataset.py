@@ -187,7 +187,7 @@ class CREStereoDataset(Dataset):
         disp = cv2.imread(path, cv2.IMREAD_UNCHANGED)
         if disp is None:
             return None
-        return disp.astype(np.float32) / 32
+        return disp.astype(np.float32) / 8 # 32
 
     def get_item_paths(self, index):
         # find path

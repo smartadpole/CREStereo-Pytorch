@@ -222,6 +222,7 @@ def main():
         with torch.no_grad():
             start = time()
             predict_np = inference(imgL, imgR, model, n_iter=20)
+            predict_np /= 4
             # print("use: ", (time() - start))
 
         WriteDepth(predict_np, imgL, args.output, output_name, args.bf)
