@@ -5,6 +5,7 @@ import torch.nn.functional as F
 
 from .utils import bilinear_sampler, coords_grid, manual_pad
 
+
 class AGCL:
     """
     Implementation of Adaptive Group Correlation Layer (AGCL).
@@ -39,7 +40,7 @@ class AGCL:
         corr_list = []
         for h in range(0, pady * 2 + 1, di_y):
             for w in range(0, padx * 2 + 1, di_x):
-                right_crop = right_pad[:, :, h : h + H, w : w + W]
+                right_crop = right_pad[:, :, h: h + H, w: w + W]
                 assert right_crop.shape == left_feature.shape
                 corr = torch.mean(left_feature * right_crop, dim=1, keepdims=True)
                 corr_list.append(corr)
@@ -62,8 +63,8 @@ class AGCL:
             dilate_list = [(1, 1), (1, 1), (1, 1), (1, 1)]
 
         N, C, H, W = left_feature.shape
-        lefts = torch.split(left_feature, left_feature.shape[1]//4, dim=1)
-        rights = torch.split(right_feature, right_feature.shape[1]//4, dim=1)
+        lefts = torch.split(left_feature, left_feature.shape[1] // 4, dim=1)
+        rights = torch.split(right_feature, right_feature.shape[1] // 4, dim=1)
 
         corrs = []
         for i in range(len(psize_list)):
@@ -77,7 +78,7 @@ class AGCL:
         return final_corr
 
     def corr_att_offset(
-        self, left_feature, right_feature, flow, extra_offset, small_patch
+            self, left_feature, right_feature, flow, extra_offset, small_patch
     ):
 
         N, C, H, W = left_feature.shape
@@ -93,8 +94,8 @@ class AGCL:
                 for x in [left_feature, right_feature]
             ]
 
-        lefts = torch.split(left_feature, left_feature.shape[1]//4, dim=1)
-        rights = torch.split(right_feature, right_feature.shape[1]//4, dim=1)
+        lefts = torch.split(left_feature, left_feature.shape[1] // 4, dim=1)
+        rights = torch.split(right_feature, right_feature.shape[1] // 4, dim=1)
 
         C = C // 4
 
@@ -106,7 +107,7 @@ class AGCL:
             dilate_list = [(1, 1), (1, 1), (1, 1), (1, 1)]
 
         search_num = 9
-        extra_offset = extra_offset.reshape(N, search_num, 2, H, W).permute(0, 1, 3, 4, 2) # [N, search_num, 1, 1, 2]
+        extra_offset = extra_offset.reshape(N, search_num, 2, H, W).permute(0, 1, 3, 4, 2)  # [N, search_num, 1, 1, 2]
 
         corrs = []
         for i in range(len(psize_list)):
@@ -118,8 +119,13 @@ class AGCL:
 
             ry = psizey // 2 * dilatey
             rx = psizex // 2 * dilatex
-            x_grid, y_grid = torch.meshgrid(torch.arange(-rx, rx + 1, dilatex, device=self.fmap1.device), 
-                                    torch.arange(-ry, ry + 1, dilatey, device=self.fmap1.device), indexing='xy')
+            try:
+                x_grid, y_grid = torch.meshgrid(torch.arange(-rx, rx + 1, dilatex, device=self.fmap1.device),
+                                                torch.arange(-ry, ry + 1, dilatey, device=self.fmap1.device),
+                                                indexing='xy')
+            except:
+                x_grid, y_grid = torch.meshgrid(torch.arange(-rx, rx + 1, dilatex, device=self.fmap1.device),
+                                                torch.arange(-ry, ry + 1, dilatey, device=self.fmap1.device))
 
             offsets = torch.stack((x_grid, y_grid))
             offsets = offsets.reshape(2, -1).permute(1, 0)
