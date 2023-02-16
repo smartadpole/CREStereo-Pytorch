@@ -89,11 +89,35 @@ def GetDepthImg(img):
 
     return depth_img_rgb.astype(np.uint8)
 
+def gray_scale_region(gray_img, min_value=1, max_value=255):
+    min_valid_index = gray_img > min_value
+
+    max_valid_index = gray_img < max_value
+
+    if (not (min_valid_index.any())):
+        gray_img[:,:] = min_value
+        return gray_img
+    if (not (max_valid_index.any())):
+        gray_img[:, :] = max_value
+        return gray_img
+
+    min_scale_value = np.min(gray_img[min_valid_index])
+
+    max_scale_value = np.max(gray_img[max_valid_index])
+
+    scale_gray = gray_img.copy()
+    scale_gray[gray_img < min_value] = min_scale_value
+    scale_gray[gray_img > max_value] = max_scale_value
+    scale_gray = 1.0 / scale_gray
+    scale_gray = (scale_gray - np.min(scale_gray))/(np.max(scale_gray) - np.min(scale_gray)) * 255
+    return scale_gray
+
 def WriteDepth(predict_np, limg, path, name, bf):
     name = os.path.splitext(name)[0] + ".png"
     output_concat_color = os.path.join(path, "concat_color", name)
     output_concat_gray = os.path.join(path, "concat_gray", name)
     output_gray = os.path.join(path, "gray", name)
+    output_gray_scale = os.path.join(path, "gray_scale", name)
     output_depth = os.path.join(path, "depth", name)
     output_color = os.path.join(path, "color", name)
     output_concat_depth = os.path.join(path, "concat_depth", name)
@@ -105,6 +129,7 @@ def WriteDepth(predict_np, limg, path, name, bf):
     MkdirSimple(output_depth)
     MkdirSimple(output_color)
     MkdirSimple(output_concat)
+    MkdirSimple(output_gray_scale)
 
     depth_img = bf / predict_np * 100  # to cm
 
@@ -121,10 +146,18 @@ def WriteDepth(predict_np, limg, path, name, bf):
     concat_img_depth = np.vstack([limg_cv, depth_img_rgb])
     concat = np.hstack([np.vstack([limg_cv, color_img]), np.vstack([predict_np_rgb, depth_img_rgb])])
 
+    predict_np_scale = gray_scale_region(predict_np, 5, 240)
+
+    if (not predict_np_scale.any()):
+        print("zero image")
+        return
+
+    cv2.imwrite(output_gray_scale, predict_np_scale)
     cv2.imwrite(output_concat_color, concat_img_color)
     cv2.imwrite(output_concat_gray, concat_img_gray)
     cv2.imwrite(output_color, color_img)
     cv2.imwrite(output_gray, predict_np)
+
     cv2.imwrite(output_depth, depth_img_rgb)
     cv2.imwrite(output_concat_depth, concat_img_depth)
     cv2.imwrite(output_concat, concat)

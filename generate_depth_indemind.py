@@ -103,7 +103,9 @@ def write_by_img_list(img_list, depth_list, model):
         if "cam0/" in left_image_file:
             right_image_file = left_image_file.replace("cam0/", "cam1/")
         elif "cam1/" in left_image_file:
-            right_image_file = left_image_file.replace("cam1/", "cam0/")
+            right_image_file = left_image_file
+            left_image_file = right_image_file.repalce("cam1/", "cam0/")
+            print("right_image_file: ", right_image_file)
         else:
             print("'cam0/' or 'cam1/' not in image name, continue")
             continue
