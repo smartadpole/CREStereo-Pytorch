@@ -89,6 +89,15 @@ def GetDepthImg(img):
 
     return depth_img_rgb.astype(np.uint8)
 
+def scale_reduce(gray_img):
+    image = gray_img - np.min(gray_img)
+    if (np.max(image)) <= 0 or (np.max(image) - np.min(image)) <= 0:
+        print("return gray img")
+        return gray_img
+    image = image / (np.max(image)-np.min(image)) * 255.0
+    image = 255 - image
+    return image
+
 def gray_scale_region(gray_img, min_value=1, max_value=255):
     min_valid_index = gray_img > min_value
 
@@ -146,7 +155,8 @@ def WriteDepth(predict_np, limg, path, name, bf):
     concat_img_depth = np.vstack([limg_cv, depth_img_rgb])
     concat = np.hstack([np.vstack([limg_cv, color_img]), np.vstack([predict_np_rgb, depth_img_rgb])])
 
-    predict_np_scale = gray_scale_region(predict_np, 5, 240)
+    # predict_np_scale = gray_scale_region(predict_np, 5, 240)
+    predict_np_scale = scale_reduce(predict_np)
 
     if (not predict_np_scale.any()):
         print("zero image")

@@ -63,10 +63,10 @@ def GetImages(path, flag='kitti'):
 
 def scale_reduce(gray_img):
     image = gray_img - np.min(gray_img)
-    if (np.max(image)) <= 0:
+    if (np.max(image)) <= 0 or (np.max(image) - np.min(image)) <= 0:
         print("return gray img")
         return gray_img
-    image = image / np.max(image) * 255.0
+    image = image / (np.max(image)-np.min(image)) * 255.0
     image = 255 - image
     return image
 
