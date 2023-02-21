@@ -100,7 +100,7 @@ def get_file_name(file_name, image_path):
     depth_list = []
     for image_name in file_lists:
         image_full_path = os.path.join(image_path, image_name)
-        image_dest_path = image_full_path.replace("REMAP", "DEPTH/CREStereo_reduce").split()[0]
+        image_dest_path = image_full_path.replace("REMAP", "DEPTH/CREStereo").split()[0]
         image_dest_path = image_dest_path.replace(".jpg", ".png")
         image_list.append(image_full_path)
         depth_list.append(image_dest_path)
@@ -171,7 +171,7 @@ def write_by_img_list(img_list, depth_list, model):
         MkdirSimple(depth_image_file)
 
        # predict_np_scale = gray_scale_region(predict_np, 5, 240)
-        predict_np_scale = scale_reduce(predict_np)
+        predict_np_scale = predict_np # scale_reduce(predict_np)
         if (not predict_np_scale.any()):
             print(left_image_file)
             continue
