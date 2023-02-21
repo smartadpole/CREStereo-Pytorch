@@ -101,6 +101,6 @@ if __name__ == '__main__':
             save_image += 1
             save_image_id.append(i)
     with open("file_list.txt", "w") as f:
-        for file_list in file_lists:
-            f.write(file_list)
-    print("all_image: ", all_image, "\nsave_image: ", save_image, "file_list write: ", len(file_list))
+        for index in save_image_id:
+            f.write(file_lists[index])
+    print("all_image: ", all_image, "\nsave_image: ", save_image, "file_list write: ", len(save_image_id))
