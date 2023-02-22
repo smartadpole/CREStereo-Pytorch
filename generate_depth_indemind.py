@@ -19,12 +19,13 @@ DATA_TYPE = ['kitti', 'dl', 'depth', 'server']
 def GetArgs():
     parser = argparse.ArgumentParser(description='LaC')
     parser.add_argument('--no_cuda', action='store_true', default=False)
-    parser.add_argument('--ignore_target', action='store_true', default=False)
     parser.add_argument('--gpu_id', type=str, default='0')
     parser.add_argument('--data_path', type=str, default='/media/data/dataset/KITTI/data_scene_flow/training/')
     parser.add_argument('--model_file', type=str, default='models/crestereo_eth3d.pth')
     parser.add_argument('--file_name', help='image list in file', required=True)
     parser.add_argument('--bf', type=float, default=14.2, help="baseline length multiply focal length")
+    parser.add_argument('--bits', type=int, default=1, help="save uint8 or uint16 image")
+    parser.add_argument('--depth_dir', type=str, required=True, help="dir save generated depth image")
 
     args = parser.parse_args()
 
@@ -93,21 +94,21 @@ def gray_scale_region(gray_img, min_value=1, max_value=255):
     scale_gray = (scale_gray - np.min(scale_gray))/(np.max(scale_gray) - np.min(scale_gray)) * 255
     return scale_gray
 
-def get_file_name(file_name, image_path):
+def get_file_name(file_name, image_path, depth_dir):
     with open(file_name, 'r') as f:
         file_lists = f.readlines()
     image_list = []
     depth_list = []
     for image_name in file_lists:
         image_full_path = os.path.join(image_path, image_name)
-        image_dest_path = image_full_path.replace("REMAP", "DEPTH/CREStereo").split()[0]
+        image_dest_path = image_full_path.replace("REMAP", depth_dir).split()[0]
         image_dest_path = image_dest_path.replace(".jpg", ".png")
         image_list.append(image_full_path)
         depth_list.append(image_dest_path)
 
     return image_list, depth_list
 
-def write_by_img_list(img_list, depth_list, model):
+def write_by_img_list(img_list, depth_list, model, bits=1):
     for left_image_file, depth_image_file in tzip(img_list, depth_list):
         if "cam0/" in left_image_file:
             right_image_file = left_image_file.replace("cam0/", "cam1/")
@@ -124,7 +125,6 @@ def write_by_img_list(img_list, depth_list, model):
         if not os.path.exists(left_image_file) or not os.path.exists(right_image_file):
             print("image in cam0 or in cam1 not exist, continue")
             assert 0
-            continue
 
         left_img = cv2.imread(left_image_file)
         right_img = cv2.imread(right_image_file)
@@ -164,19 +164,35 @@ def write_by_img_list(img_list, depth_list, model):
         imgR = cv2.resize(right_img, (eval_w, eval_h), interpolation=cv2.INTER_LINEAR)
 
         with torch.no_grad():
-            start = time()
             predict_np = inference(imgL, imgR, model, n_iter=20)
             # print("use: ", (time() - start))
 
         MkdirSimple(depth_image_file)
 
+        depth_min = predict_np.min()
+        depth_max = predict_np.max()
+
+        max_val = (2 ** (8 * bits)) - 1
+
        # predict_np_scale = gray_scale_region(predict_np, 5, 240)
-        predict_np_scale = predict_np # scale_reduce(predict_np)
-        if (not predict_np_scale.any()):
-            print(left_image_file)
-            continue
+        if bits ==1 :
+            predict_np_scale = predict_np # scale_reduce(predict_np)
+            cv2.imwrite(depth_image_file, predict_np_scale)
+
+
+        elif bits == 2:
+            predict_np_scale = predict_np.astype(np.float32)
+            if depth_max - depth_min > np.finfo("float").eps:
+                out = max_val * (predict_np_scale - depth_min) / (depth_max - depth_min)
+            else:
+                out = np.zeros(predict_np_scale.shape, dtype=predict_np_scale.dtype)
 
         cv2.imwrite(depth_image_file, predict_np_scale)
+
+        if bits == 1:
+            cv2.imwrite(depth_image_file, out.astype("uint8"))
+        elif bits == 2:
+            cv2.imwrite(depth_image_file, out.astype("uint16"))
 
 def main():
     args = GetArgs()
@@ -213,9 +229,9 @@ def main():
         model.cuda()
     model.eval()
 
-    img_list, depth_list = get_file_name(args.file_name, args.data_path)
+    img_list, depth_list = get_file_name(args.file_name, args.data_path, args.depth_dir)
 
-    write_by_img_list(img_list, depth_list, model)
+    write_by_img_list(img_list, depth_list, model, args.bits)
 
 if __name__ == '__main__':
     main()
