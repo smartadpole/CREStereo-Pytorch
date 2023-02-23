@@ -90,8 +90,15 @@ def gray_scale_region(gray_img, min_value=1, max_value=255):
     scale_gray = gray_img.copy()
     scale_gray[gray_img < min_value] = min_scale_value
     scale_gray[gray_img > max_value] = max_scale_value
-    scale_gray = 1.0 / scale_gray
-    scale_gray = (scale_gray - np.min(scale_gray))/(np.max(scale_gray) - np.min(scale_gray)) * 255
+    print(np.max(scale_gray))
+    print(scale_gray[291][572])
+    print(scale_gray[363][489])
+    scale_gray = (scale_gray - np.min(scale_gray)) / (np.max(scale_gray) - np.min(scale_gray)) * 255
+    print(np.max(scale_gray))
+    
+    scale_gray = 255 - scale_gray
+    # scale_gray = 1.0 / scale_gray
+    # scale_gray = (scale_gray - np.min(scale_gray))/(np.max(scale_gray) - np.min(scale_gray)) * 255
     return scale_gray
 
 def get_file_name(file_name, image_path, depth_dir):

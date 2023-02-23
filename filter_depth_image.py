@@ -30,8 +30,8 @@ def get_min_max_index(image, max_index_ratio):
             min_index = max(0, i - 1)
             break
     for i in range(min_index, len(hist)):
-        if hist[i] < 100:
-            max_index = min(i + 1, 255)
+        if hist[i] < 1000:
+            max_index = min(i, 255)
             max_ration = np.sum(hist[max_index:])/(image.shape[0]*image.shape[1])
             if max_ration > max_index_ratio:
                 continue
@@ -86,16 +86,22 @@ if __name__ == '__main__':
     save_image = 0
     save_image_id = []
     for i, (image_name, scale_image_name) in enumerate(tzip(depth_list, dest_list)):
-        image = cv2.imread(image_name,cv2.IMREAD_GRAYSCALE)
+        print(image_name)
+        image_uint16 = cv2.imread(image_name, cv2.CV_16U)
+
+        image = image_uint16/256.0
+        image = image.astype(np.uint8)
 
         if filter_too_close_origin_depth(image, filter_value) > filter_ratio:
             print("\nimage too close > ", filter_value, " ratio > ", filter_ratio, image_name)
             continue
         else:
             min_index, max_index = get_min_max_index(image, max_index_ratio)
+            print("min_index: ", min_index)
+            print("max_index: ", max_index)
             if max_index - min_index < 2:
                 print("max_index - min_index < ", 2, ", continue")
-            scale_image = gray_scale_region(image, min_index, max_index)
+            scale_image = gray_scale_region(image_uint16, min_index * 256, max_index * 256)
             MkdirSimple(scale_image_name)
             cv2.imwrite(scale_image_name, scale_image)
             save_image += 1
