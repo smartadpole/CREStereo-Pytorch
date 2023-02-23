@@ -28,7 +28,7 @@ def inference(left, right, model, n_iter=20, init_flow: bool = True, device: str
             align_corners=True,
         )
     # print(imgR_dw2.shape)
-    with torch.inference_mode():
+    with torch.no_grad():
         if init_flow:
             pred_flow_dw2 = model(imgL_dw2, imgR_dw2, iters=n_iter, flow_init=None)
             pred_flow = model(imgL, imgR, iters=n_iter // 2, flow_init=pred_flow_dw2)

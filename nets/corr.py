@@ -119,7 +119,7 @@ class AGCL:
             ry = psizey // 2 * dilatey
             rx = psizex // 2 * dilatex
             x_grid, y_grid = torch.meshgrid(torch.arange(-rx, rx + 1, dilatex, device=self.fmap1.device), 
-                                    torch.arange(-ry, ry + 1, dilatey, device=self.fmap1.device), indexing='xy')
+                                    torch.arange(-ry, ry + 1, dilatey, device=self.fmap1.device))
 
             offsets = torch.stack((x_grid, y_grid))
             offsets = offsets.reshape(2, -1).permute(1, 0)

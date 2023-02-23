@@ -15,7 +15,7 @@ def test_meshgrid():
 
     # Test Pytorch
     x_grid_pytorch, y_grid_pytorch = torch.meshgrid(torch.arange(-rx, rx + 1, dilatex, device='cpu'), 
-                                     torch.arange(-ry, ry + 1, dilatey, device='cpu'), indexing='xy')
+                                     torch.arange(-ry, ry + 1, dilatey, device='cpu'))
 
 
     error_x = np.mean(x_grid_pytorch.numpy()-x_grid)

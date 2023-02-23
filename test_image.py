@@ -183,6 +183,10 @@ def main():
 
         left_img = cv2.imread(left_image_file)
         right_img = cv2.imread(right_image_file)
+
+        left_img = cv2.resize(left_img, (640, 400), interpolation=cv2.INTER_LINEAR)
+        right_img = cv2.resize(right_img, (640, 400), interpolation=cv2.INTER_LINEAR)
+
         # left_img = cv2.cvtColor(left_img, cv2.COLOR_BGR2RGB)
         # right_img = cv2.cvtColor(right_img, cv2.COLOR_BGR2RGB)
 
@@ -218,6 +222,27 @@ def main():
 
         imgL = cv2.resize(left_img, (eval_w, eval_h), interpolation=cv2.INTER_LINEAR)
         imgR = cv2.resize(right_img, (eval_w, eval_h), interpolation=cv2.INTER_LINEAR)
+
+        show = False
+        marge = 10
+
+        if show:
+            imgL_pad = imgL.copy()
+            imgR_pad = imgR.copy()
+        else:
+            imgL_pad = imgL
+            imgR_pad = imgR
+        imgL_pad[:marge, :, :] = imgL_pad[marge, :, :]
+        imgL_pad[eval_h - marge:, :, :] = imgL_pad[eval_h - marge, :, :]
+        imgR_pad[:marge, :, :] = imgR_pad[marge, :, :]
+        imgR_pad[eval_h - marge:, :, :] = imgR_pad[eval_h - marge, :, :]
+
+        if show:
+            show_img_pad = np.concatenate([imgL_pad, imgR_pad])
+            show_img = np.concatenate([imgL, imgR])
+            ret = np.concatenate([show_img, show_img_pad], axis=1)
+            cv2.imshow("img", ret)
+            cv2.waitKey(0)
 
         with torch.no_grad():
             start = time()
