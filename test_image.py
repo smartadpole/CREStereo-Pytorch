@@ -37,7 +37,10 @@ def GetImages(path, flag='kitti'):
         root_len = len(os.path.dirname(paths).rstrip('/'))
     elif os.path.isdir(path):
         # Searching folder for images
-        paths = Walk(path, ['jpg', 'png', 'jpeg'])
+        if os.path.exists(os.path.join(path, 'all.txt')):
+            paths = [os.path.join(path, l.strip('\n').strip()) for l in open(os.path.join(path, 'all.txt')).readlines()]
+        else:
+            paths = Walk(path, ['jpg', 'jpeg', 'png', 'bmp', 'pfm'])
         root_len = len(path.rstrip('/'))
     else:
         raise Exception("Can not find path: {}".format(path))
@@ -131,16 +134,14 @@ def WriteDepth(predict_np, limg, path, name, bf):
     output_color = os.path.join(path, "color", name)
     output_concat_depth = os.path.join(path, "concat_depth", name)
     output_concat = os.path.join(path, "concat", name)
-    MkdirSimple(output_concat_color)
-    MkdirSimple(output_concat_gray)
-    MkdirSimple(output_concat_depth)
-    MkdirSimple(output_gray)
-    MkdirSimple(output_depth)
-    MkdirSimple(output_color)
-    MkdirSimple(output_concat)
-    MkdirSimple(output_gray_scale)
 
+    MkdirSimple(output_gray)
     depth_img = bf / predict_np * 100  # to cm
+    depth_img_u16 = depth_img * 100
+    depth_img_u16 = depth_img_u16.astype("uint16")
+
+    cv2.imwrite(output_gray, depth_img_u16)
+    return
 
     predict_np_int = predict_np.astype(np.uint8)
     color_img = cv2.applyColorMap(predict_np_int, cv2.COLORMAP_HOT)
@@ -155,19 +156,16 @@ def WriteDepth(predict_np, limg, path, name, bf):
     concat_img_depth = np.vstack([limg_cv, depth_img_rgb])
     concat = np.hstack([np.vstack([limg_cv, color_img]), np.vstack([predict_np_rgb, depth_img_rgb])])
 
-    # predict_np_scale = gray_scale_region(predict_np, 5, 240)
-    predict_np_scale = scale_reduce(predict_np)
+    MkdirSimple(output_concat_color)
+    MkdirSimple(output_concat_gray)
+    MkdirSimple(output_concat_depth)
+    MkdirSimple(output_depth)
+    MkdirSimple(output_color)
+    MkdirSimple(output_concat)
 
-    if (not predict_np_scale.any()):
-        print("zero image")
-        return
-
-    cv2.imwrite(output_gray_scale, predict_np_scale)
     cv2.imwrite(output_concat_color, concat_img_color)
     cv2.imwrite(output_concat_gray, concat_img_gray)
     cv2.imwrite(output_color, color_img)
-    cv2.imwrite(output_gray, predict_np)
-
     cv2.imwrite(output_depth, depth_img_rgb)
     cv2.imwrite(output_concat_depth, concat_img_depth)
     cv2.imwrite(output_concat, concat)
