@@ -24,6 +24,7 @@ def GetArgs():
     parser.add_argument('--model_file', type=str, default='models/crestereo_eth3d.pth')
     parser.add_argument('--output', type=str)
     parser.add_argument('--bf', type=float, default=14.2, help="baseline length multiply focal length")
+    parser.add_argument('--max_depth', type=int, default=1000, help="the valide max depth")
 
     args = parser.parse_args()
 
@@ -92,7 +93,7 @@ def GetDepthImg(img):
 
     return depth_img_rgb.astype(np.uint8)
 
-def WriteDepth(predict_np, limg, path, name, bf):
+def WriteDepth(predict_np, limg, path, name, bf, max_value):
     name = os.path.splitext(name)[0] + ".png"
     output_concat_color = os.path.join(path, "concat_color", name)
     output_concat_gray = os.path.join(path, "concat_gray", name)
@@ -104,7 +105,13 @@ def WriteDepth(predict_np, limg, path, name, bf):
 
     MkdirSimple(output_gray)
     depth_img = bf / predict_np * 100  # to cm
-    depth_img_u16 = depth_img * 100
+
+    if depth_img.max() > max_value or depth_img.min() < 0:
+        print("\nmax ", depth_img.max(), " min ", depth_img.min())
+        print(name)
+    depth_img[depth_img < 0] = 0
+    depth_img[depth_img > max_value] = max_value
+    depth_img_u16 = depth_img / max_value * 65536
     depth_img_u16 = depth_img_u16.astype("uint16")
 
     cv2.imwrite(output_gray, depth_img_u16)
@@ -232,7 +239,7 @@ def main():
             predict_np = inference(imgL, imgR, model, n_iter=20)
             # print("use: ", (time() - start))
 
-        WriteDepth(predict_np, imgL, args.output, output_name, args.bf)
+        WriteDepth(predict_np, imgL, args.output, output_name, args.bf, args.max_depth)
 
 
 if __name__ == '__main__':
