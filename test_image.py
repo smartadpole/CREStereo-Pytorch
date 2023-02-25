@@ -93,11 +93,44 @@ def GetDepthImg(img):
 
     return depth_img_rgb.astype(np.uint8)
 
+def scale_reduce(gray_img):
+    image = gray_img - np.min(gray_img)
+    if (np.max(image)) <= 0 or (np.max(image) - np.min(image)) <= 0:
+        print("return gray img")
+        return gray_img
+    image = image / (np.max(image)-np.min(image)) * 255.0
+    image = 255 - image
+    return image
+
+def gray_scale_region(gray_img, min_value=1, max_value=255):
+    min_valid_index = gray_img > min_value
+
+    max_valid_index = gray_img < max_value
+
+    if (not (min_valid_index.any())):
+        gray_img[:,:] = min_value
+        return gray_img
+    if (not (max_valid_index.any())):
+        gray_img[:, :] = max_value
+        return gray_img
+
+    min_scale_value = np.min(gray_img[min_valid_index])
+
+    max_scale_value = np.max(gray_img[max_valid_index])
+
+    scale_gray = gray_img.copy()
+    scale_gray[gray_img < min_value] = min_scale_value
+    scale_gray[gray_img > max_value] = max_scale_value
+    scale_gray = 1.0 / scale_gray
+    scale_gray = (scale_gray - np.min(scale_gray))/(np.max(scale_gray) - np.min(scale_gray)) * 255
+    return scale_gray
+
 def WriteDepth(predict_np, limg, path, name, bf, max_value):
     name = os.path.splitext(name)[0] + ".png"
     output_concat_color = os.path.join(path, "concat_color", name)
     output_concat_gray = os.path.join(path, "concat_gray", name)
     output_gray = os.path.join(path, "gray", name)
+    output_gray_scale = os.path.join(path, "gray_scale", name)
     output_depth = os.path.join(path, "depth", name)
     output_color = os.path.join(path, "color", name)
     output_concat_depth = os.path.join(path, "concat_depth", name)
@@ -111,7 +144,7 @@ def WriteDepth(predict_np, limg, path, name, bf, max_value):
         print(name)
     depth_img[depth_img < 0] = 0
     depth_img[depth_img > max_value] = max_value
-    depth_img_u16 = depth_img / max_value * 65536
+    depth_img_u16 = depth_img / max_value * 65535
     depth_img_u16 = depth_img_u16.astype("uint16")
 
     cv2.imwrite(output_gray, depth_img_u16)
