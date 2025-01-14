@@ -94,38 +94,46 @@ def GetDepthImg(img):
     return depth_img_rgb.astype(np.uint8)
 
 def WriteDepth(predict_np, limg, path, name, bf, max_value):
+    if 'camera_0' in name or 'camera_2' in name:
+        bf = 26.7
+    else:
+        bf = 19
     name = os.path.splitext(name)[0] + ".png"
     output_concat_color = os.path.join(path, "concat_color", name)
     output_concat_gray = os.path.join(path, "concat_gray", name)
     output_gray = os.path.join(path, "gray", name)
+    output_float = os.path.join(path, "tiff", os.path.splitext(name)[0] + ".tiff")
     output_depth = os.path.join(path, "depth", name)
     output_color = os.path.join(path, "color", name)
     output_concat_depth = os.path.join(path, "concat_depth", name)
     output_concat = os.path.join(path, "concat", name)
 
     MkdirSimple(output_gray)
+    # MkdirSimple(output_float)
     depth_img = bf / predict_np * 100  # to cm
 
-    if depth_img.max() > max_value or depth_img.min() < 0:
-        print("\nmax ", depth_img.max(), " min ", depth_img.min())
-        print(name)
-    depth_img[depth_img < 0] = 0
-    depth_img[depth_img > max_value] = max_value
-    depth_img_u16 = depth_img / max_value * 65536
+    # if depth_img.max() > max_value or depth_img.min() < 0:
+    #     print("\nmax ", depth_img.max(), " min ", depth_img.min())
+    #     print(name)
+    # cv2.imwrite(output_float, depth_img)
+    depth_img = np.clip(depth_img, 0, max_value)
+    depth_img_u16 = depth_img / max_value * 65535
     depth_img_u16 = depth_img_u16.astype("uint16")
 
     cv2.imwrite(output_gray, depth_img_u16)
-    return
+    # return
 
-    predict_np_int = predict_np.astype(np.uint8)
-    color_img = cv2.applyColorMap(predict_np_int, cv2.COLORMAP_HOT)
+    depth_norm = np.clip(depth_img, 1, max_value)
+    depth_norm = 1.0 / depth_norm
+    depth_norm = (depth_norm - depth_norm.min()) / (depth_norm.max() - depth_norm.min()) * 255.0
+    depth_norm = depth_norm.astype(np.uint8)
+    color_img = cv2.applyColorMap(depth_norm, cv2.COLORMAP_HOT)
     limg_cv = limg # cv2.cvtColor(np.asarray(limg), cv2.COLOR_RGB2BGR)
     concat_img_color = np.vstack([limg_cv, color_img])
     predict_np_rgb = np.stack([predict_np, predict_np, predict_np], axis=2)
     concat_img_gray = np.vstack([limg_cv, predict_np_rgb])
 
     # get depth
-    depth_img_temp = bf / predict_np_int * 100  # to cm
     depth_img_rgb = GetDepthImg(depth_img)
     concat_img_depth = np.vstack([limg_cv, depth_img_rgb])
     concat = np.hstack([np.vstack([limg_cv, color_img]), np.vstack([predict_np_rgb, depth_img_rgb])])
@@ -237,7 +245,7 @@ def main():
         with torch.no_grad():
             start = time()
             predict_np = inference(imgL, imgR, model, n_iter=20)
-            # print("use: ", (time() - start))
+            print("inference use: {:.2f} ms".format((time() - start) * 1000))
 
         WriteDepth(predict_np, imgL, args.output, output_name, args.bf, args.max_depth)
 

@@ -160,3 +160,5 @@ models/*
 train_log/
 
 demo_output/
+log/
+*log.*
