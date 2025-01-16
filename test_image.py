@@ -94,10 +94,16 @@ def GetDepthImg(img):
     return depth_img_rgb.astype(np.uint8)
 
 def WriteDepth(predict_np, limg, path, name, bf, max_value):
-    if 'camera_0' in name or 'camera_2' in name:
-        bf = 26.7
+    if 'camera_0' in name:
+        bf = 49.69
+    elif 'camera_2' in name:
+        bf = 34.42
+    elif 'camera_3' in name:
+        bf = 50.48
     else:
-        bf = 19
+        bf = 35.25
+
+    bf = bf / 2
     name = os.path.splitext(name)[0] + ".png"
     output_concat_color = os.path.join(path, "concat_color", name)
     output_concat_gray = os.path.join(path, "concat_gray", name)
@@ -127,7 +133,7 @@ def WriteDepth(predict_np, limg, path, name, bf, max_value):
     depth_norm = 1.0 / depth_norm
     depth_norm = (depth_norm - depth_norm.min()) / (depth_norm.max() - depth_norm.min()) * 255.0
     depth_norm = depth_norm.astype(np.uint8)
-    color_img = cv2.applyColorMap(depth_norm, cv2.COLORMAP_HOT)
+    color_img = cv2.applyColorMap(depth_norm, cv2.COLORMAP_MAGMA)
     limg_cv = limg # cv2.cvtColor(np.asarray(limg), cv2.COLOR_RGB2BGR)
     concat_img_color = np.vstack([limg_cv, color_img])
     predict_np_rgb = np.stack([predict_np, predict_np, predict_np], axis=2)
