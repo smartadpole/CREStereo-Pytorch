@@ -94,25 +94,16 @@ def GetDepthImg(img):
     return depth_img_rgb.astype(np.uint8)
 
 def WriteDepth(predict_np, limg, path, name, bf, max_value):
-    if 'camera_0' in name:
-        bf = 49.69
-    elif 'camera_2' in name:
-        bf = 34.42
-    elif 'camera_3' in name:
-        bf = 50.48
-    else:
-        bf = 35.25
-
-    bf = bf / 2
     name = os.path.splitext(name)[0] + ".png"
-    output_concat_color = os.path.join(path, "concat_color", name)
-    output_concat_gray = os.path.join(path, "concat_gray", name)
-    output_gray = os.path.join(path, "gray", name)
-    output_float = os.path.join(path, "tiff", os.path.splitext(name)[0] + ".tiff")
-    output_depth = os.path.join(path, "depth", name)
-    output_color = os.path.join(path, "color", name)
-    output_concat_depth = os.path.join(path, "concat_depth", name)
+    name = name.replace('left', 'depth').replace('right', 'depth').replace('cam0', 'depth').replace('cam1', 'depth')
+    output_concat_color = os.path.join(path, "rgb_color", name)
+    output_concat_gray = os.path.join(path, "rgb_depth", name)
+    output_concat_depth = os.path.join(path, "rgb_blue", name)
     output_concat = os.path.join(path, "concat", name)
+    output_gray = os.path.join(path, "depth", name)
+    output_float = os.path.join(path, "tiff", os.path.splitext(name)[0] + ".tiff")
+    output_depth = os.path.join(path, "depth_blue", name)
+    output_color = os.path.join(path, "color", name)
 
     MkdirSimple(output_gray)
     # MkdirSimple(output_float)
