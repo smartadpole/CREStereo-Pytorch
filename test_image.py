@@ -25,6 +25,7 @@ def GetArgs():
     parser.add_argument('--output', type=str)
     parser.add_argument('--bf', type=float, default=14.2, help="baseline length multiply focal length")
     parser.add_argument('--max_depth', type=int, default=1000, help="the valide max depth")
+    parser.add_argument('--scale', type=float, default=1, help="scale image to super resolution")
 
     args = parser.parse_args()
 
@@ -135,23 +136,24 @@ def WriteDepth(predict_np, limg, path, name, bf, max_value):
     concat_img_depth = np.vstack([limg_cv, depth_img_rgb])
     concat = np.hstack([np.vstack([limg_cv, color_img]), np.vstack([predict_np_rgb, depth_img_rgb])])
 
-    MkdirSimple(output_concat_color)
-    MkdirSimple(output_concat_gray)
-    MkdirSimple(output_concat_depth)
-    MkdirSimple(output_depth)
-    MkdirSimple(output_color)
+    # MkdirSimple(output_concat_color)
+    # MkdirSimple(output_concat_gray)
+    # MkdirSimple(output_concat_depth)
+    # MkdirSimple(output_depth)
+    # MkdirSimple(output_color)
     MkdirSimple(output_concat)
 
-    cv2.imwrite(output_concat_color, concat_img_color)
-    cv2.imwrite(output_concat_gray, concat_img_gray)
-    cv2.imwrite(output_color, color_img)
-    cv2.imwrite(output_depth, depth_img_rgb)
-    cv2.imwrite(output_concat_depth, concat_img_depth)
+    # cv2.imwrite(output_concat_color, concat_img_color)
+    # cv2.imwrite(output_concat_gray, concat_img_gray)
+    # cv2.imwrite(output_color, color_img)
+    # cv2.imwrite(output_depth, depth_img_rgb)
+    # cv2.imwrite(output_concat_depth, concat_img_depth)
     cv2.imwrite(output_concat, concat)
 
 
 def main():
     args = GetArgs()
+    bf = args.bf * args.scale
 
     output_directory = args.output
 
@@ -206,7 +208,11 @@ def main():
         # left_img = cv2.cvtColor(left_img, cv2.COLOR_BGR2RGB)
         # right_img = cv2.cvtColor(right_img, cv2.COLOR_BGR2RGB)
 
+        org_h, org_w = left_img.shape[:2]
         in_h, in_w = left_img.shape[:2]
+        scale_h, scale_w = [int(dim * args.scale) for dim in left_img.shape[:2]]
+        left_img = cv2.resize(left_img, (scale_w, scale_h), interpolation=cv2.INTER_LINEAR)
+        right_img = cv2.resize(right_img, (scale_w, scale_h), interpolation=cv2.INTER_LINEAR)
 
         if in_h % 8 != 0:
             pad_h = in_h % 8
@@ -230,9 +236,7 @@ def main():
             left_img = np.pad(left_img, ((0, 0), (pad_w // 2, pad_w // 2), (0, 0)), mode='reflect')
             right_img = np.pad(right_img, ((0, 0), (pad_w // 2, pad_w // 2), (0, 0)), mode='reflect')
 
-        in_h, in_w = left_img.shape[:2]
-        # Resize image in case the GPU memory overflows
-        eval_h, eval_w = (in_h, in_w)
+        eval_h, eval_w = left_img.shape[:2]
         assert eval_h % 8 == 0, "input height should be divisible by 8"
         assert eval_w % 8 == 0, "input width should be divisible by 8"
 
@@ -244,7 +248,11 @@ def main():
             predict_np = inference(imgL, imgR, model, n_iter=20)
             print("inference use: {:.2f} ms".format((time() - start) * 1000))
 
-        WriteDepth(predict_np, imgL, args.output, output_name, args.bf, args.max_depth)
+            if abs(args.scale - 1) > 1e-6:
+                predict_np = cv2.resize(predict_np, (org_w, org_h), interpolation=cv2.INTER_LINEAR)
+                imgL = cv2.resize(imgL, (org_w, org_h), interpolation=cv2.INTER_LINEAR)
+
+        WriteDepth(predict_np, imgL, args.output, output_name, bf, args.max_depth)
 
 
 if __name__ == '__main__':
