@@ -3,7 +3,7 @@ from nets import Model
 from utils import inference
 import argparse
 import torch
-from torchvision import transforms
+from file import MkdirSimple, match_images
 import os
 from tqdm.contrib import tzip
 from PIL import Image
@@ -13,6 +13,13 @@ import cv2
 from file import Walk, MkdirSimple
 
 DATA_TYPE = ['kitti', 'dl', 'depth', 'server']
+
+DIR_SHAPE = [
+    ['left', 'right'],
+    ['image_02', 'image_03'],
+    ['cam0', 'cam1'],
+    ['L', 'R']
+]
 
 
 def GetArgs():
@@ -24,46 +31,26 @@ def GetArgs():
     parser.add_argument('--model_file', type=str, default='models/crestereo_eth3d.pth')
     parser.add_argument('--output', type=str)
     parser.add_argument('--bf', type=float, default=14.2, help="baseline length multiply focal length")
-    parser.add_argument('--max_depth', type=int, default=1000, help="the valide max depth")
+    parser.add_argument('--max_depth', type=int, default=1000, help="the valide max depth (cm)")
     parser.add_argument('--scale', type=float, default=1, help="scale image to super resolution")
+    parser.add_argument('--lr_threshold', type=float, default=-1, help="ignore the disp in left and right when larger than lr_threshold; less than 0 means no filter")
 
     args = parser.parse_args()
 
     return args
 
 
-def GetImages(path, flag='kitti'):
-    if os.path.isfile(path):
-        # Only testing on a single image
-        paths = [path]
-        root_len = len(os.path.dirname(paths).rstrip('/'))
-    elif os.path.isdir(path):
-        # Searching folder for images
-        if os.path.exists(os.path.join(path, 'all.txt')):
-            paths = [os.path.join(path, l.strip('\n').strip()) for l in open(os.path.join(path, 'all.txt')).readlines()]
-        else:
-            paths = Walk(path, ['jpg', 'jpeg', 'png', 'bmp', 'pfm'])
-        root_len = len(path.rstrip('/'))
-    else:
-        raise Exception("Can not find path: {}".format(path))
 
-    left_files, right_files = [], []
-    if 'kitti' == flag:
-        left_files = [f for f in paths if 'image_02' in f]
-        right_files = [f.replace('/image_02/', '/image_03/') for f in left_files]
-    elif 'dl' == flag:
-        left_files = [f for f in paths if 'cam0' in f]
-        right_files = [f.replace('/cam0/', '/cam1/') for f in left_files]
-    elif 'depth' == flag:
-        left_files = [f for f in paths if 'left' in f and 'disp' not in f]
-        right_files = [f.replace('left/', 'right/').replace('left.', 'right.') for f in left_files]
-    elif 'server' == flag:
-        left_files = [f for f in paths if '.L' in f]
-        right_files = [f.replace('L/', 'R/').replace('L.', 'R.') for f in left_files]
-    else:
-        raise Exception("Do not support mode: {}".format(flag))
+def GetImages(path):
+    matched_lists = None
+    for l, r in DIR_SHAPE:
+        left = os.path.join(path, l)
+        right = os.path.join(path, r)
+        if os.path.exists(left) and os.path.exists(right):
+            matched_lists = match_images([left, right])
+            break
 
-    return left_files, right_files, root_len
+    return matched_lists[0], matched_lists[1], len(left.rstrip('/'))
 
 
 def disp_to_depth(disp, min_depth, max_depth):
@@ -151,7 +138,7 @@ def WriteDepth(predict_np, limg, path, name, bf, max_value):
     # cv2.imwrite(output_concat_depth, concat_img_depth)
     cv2.imwrite(output_concat, concat)
 
-def left_right_consistency_check(dispL, dispR, threshold=1.0):
+def left_right_consistency_check(dispL, left_img, right_img, model, threshold=1.0):
     """
     使用左右一致性检查过滤 dispL 中的无效像素：
     dispL[y,x] 和 dispR[y, x - dispL[y,x]] 应该一致（在阈值内）否则置0
@@ -159,24 +146,22 @@ def left_right_consistency_check(dispL, dispR, threshold=1.0):
     threshold: 允许的视差差异
     return: dispL_filtered
     """
-    h, w = dispL.shape
-    dispL_filtered = dispL.copy()
-    x_coords = np.arange(w)
+    if threshold < 0:
+        return dispL
+    left_flip = cv2.flip(left_img, 1)
+    right_flip = cv2.flip(right_img, 1)
+    dispR_filp = inference(right_flip, left_flip, model, n_iter=20)
+    dispR = cv2.flip(dispR_filp, 1)
 
-    for y in range(h):
-        d_row = dispL[y]
-        d_row_r = dispR[y]
-        # x' = x - d
-        x_r = (x_coords - d_row).astype(int)
-        # 有效性检查
-        valid = (x_r >= 0) & (x_r < w) & (d_row > 0)
-        # 对不在范围内的像素设为0
-        dispL_filtered[y, ~valid] = 0
-        idx = np.where(valid)[0]
-        diff = np.abs(d_row[idx] - d_row_r[x_r[idx]])
-        # set large difference to zero
-        bad = diff > threshold
-        dispL_filtered[y, idx[bad]] = 0
+    h, w = dispL.shape
+
+    x_coords = np.arange(w)
+    x_r = (x_coords[None, :] - dispL).astype(int)
+    valid = (x_r >= 0) & (x_r < w) & (dispL > 0)
+    dispL_filtered = np.where(valid, dispL, 0)
+    diff = np.abs(dispL_filtered - dispR[np.arange(h)[:, None], x_r])
+    bad = diff > threshold
+    dispL_filtered[bad] = 0
 
     return dispL_filtered
 
@@ -225,18 +210,20 @@ def main():
     args = GetArgs()
     bf = args.bf * args.scale
 
-    output_directory = args.output
+    # output_dir = os.path.join(args.output, os.path.basename(args.data_path))
+    output_dir = args.output
 
     if not args.no_cuda:
         os.environ['CUDA_DEVICE_ORDER'] = "PCI_BUS_ID"
         os.environ['CUDA_VISIBLE_DEVICES'] = args.gpu_id
     use_cuda = torch.cuda.is_available()
 
-    left_files, right_files, root_len = [], [], []
-    for k in DATA_TYPE:
-        left_files, right_files, root_len = GetImages(args.data_path, k)
-        if len(left_files) != 0:
-            break
+    match_files = GetImages(args.data_path)
+    if not match_files:
+        print("No matched files in the path: ", args.data_path)
+        exit(0)
+
+    left_files, right_files, root_len = match_files
 
     model = Model(max_disp=256, mixed_precision=False, test_mode=True)
     print('Number of model parameters: {}'.format(sum([p.data.nelement() for p in model.parameters()])))
@@ -256,10 +243,8 @@ def main():
         model.cuda()
     model.eval()
 
-    # 主要新增参数
-    lr_threshold = 1.0     # ignore the disp in left and right when larger than lr_threshold
     flip_threshold = 10.0   # 翻转一致性阈值
-    do_flip_consistency = True  # 是否执行翻转一致性检查
+    do_flip_consistency = False  # 是否执行翻转一致性检查
     do_bilateral = True         # 是否执行双边滤波
     bilateral_params = dict(d=5, sigmaColor=2.0, sigmaSpace=5.0)
 
@@ -268,9 +253,11 @@ def main():
             continue
 
         output_name = left_image_file[root_len + 1:]
+
+        # todo: hao 2025-02-08 15:25 - update the logic
         if args.ignore_target:
             name = os.path.splitext(output_name)[0] + ".png"
-            output_concat_color = os.path.join(args.output, "concat_color", name)
+            output_concat_color = os.path.join(output_dir, "concat_color", name)
             if os.path.exists(output_concat_color):
                 continue
 
@@ -316,13 +303,9 @@ def main():
             start = time()
             disp_left = inference(imgL, imgR, model, n_iter=20)
             print("inference use: {:.2f} ms".format((time() - start) * 1000))
-            #
-            # left_flip = cv2.flip(imgR, axis=1)
-            # right_flip = cv2.flip(imgL, axis=1)
-            # disp_right = inference(imgR, imgL, model, n_iter=20)
 
-        # dispL_filtered = left_right_consistency_check(disp_left, disp_right, threshold=lr_threshold)
-        dispL_filtered = disp_left
+        dispL_filtered = left_right_consistency_check(disp_left, imgL, imgR, model, threshold=args.lr_threshold)
+        # dispL_filtered = disp_left
 
         # B. 翻转一致性检查 (可选)
         if do_flip_consistency:
@@ -351,7 +334,7 @@ def main():
         else:
             left_img_show = left_img
 
-        WriteDepth(predict_np, left_img_show, args.output, output_name, bf, args.max_depth)
+        WriteDepth(predict_np, left_img_show, output_dir, output_name, bf, args.max_depth)
 
 if __name__ == '__main__':
     main()
