@@ -322,7 +322,7 @@ def main():
             disp_left = inference(imgL, imgR, model, n_iter=20)
             print("inference use: {:.2f} ms".format((time() - start) * 1000))
 
-        dispL_filtered = left_right_consistency_check(disp_left, imgL, imgR, model, threshold=args.lr_threshold)
+        dispL_filtered = left_right_consistency_check(disp_left, imgL, imgR, model, alpha=args.lr_threshold)
         # dispL_filtered = disp_left
 
         # B. 翻转一致性检查 (可选)
