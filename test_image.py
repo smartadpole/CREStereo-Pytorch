@@ -157,6 +157,7 @@ def left_right_consistency_check(dispL, left_img, right_img, model, alpha=0.1):
 
     x_coords = np.arange(w)
     x_r = (x_coords[None, :] - dispL).astype(int)
+    x_r = np.clip(x_r, 0, w - 1)  # Ensure indices are within bounds
     valid = (x_r >= 0) & (x_r < w) & (dispL > 0)
     dispL_filtered = np.where(valid, dispL, 0)
     diff = np.abs(dispL_filtered - dispR[np.arange(h)[:, None], x_r])
