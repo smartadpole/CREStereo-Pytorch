@@ -33,7 +33,7 @@ def GetArgs():
     parser.add_argument('--bf', type=float, default=14.2, help="baseline length multiply focal length")
     parser.add_argument('--max_depth', type=int, default=1000, help="the valide max depth (cm)")
     parser.add_argument('--scale', type=float, default=1, help="scale image to super resolution")
-    parser.add_argument('--lr_threshold', type=float, default=-1, help="ignore the disp in left and right when larger than lr_threshold; less than 0 means no filter")
+    parser.add_argument('--lr_threshold', type=float, default=-1, help="ignore the disp in left and right when diff ratio larger than lr_threshold; less than 0 means no filter")
 
     args = parser.parse_args()
 
@@ -138,7 +138,7 @@ def WriteDepth(predict_np, limg, path, name, bf, max_value):
     # cv2.imwrite(output_concat_depth, concat_img_depth)
     cv2.imwrite(output_concat, concat)
 
-def left_right_consistency_check(dispL, left_img, right_img, model, threshold=1.0):
+def left_right_consistency_check(dispL, left_img, right_img, model, alpha=0.1):
     """
     使用左右一致性检查过滤 dispL 中的无效像素：
     dispL[y,x] 和 dispR[y, x - dispL[y,x]] 应该一致（在阈值内）否则置0
@@ -146,7 +146,7 @@ def left_right_consistency_check(dispL, left_img, right_img, model, threshold=1.
     threshold: 允许的视差差异
     return: dispL_filtered
     """
-    if threshold < 0:
+    if alpha < 0:
         return dispL
     left_flip = cv2.flip(left_img, 1)
     right_flip = cv2.flip(right_img, 1)
@@ -160,8 +160,26 @@ def left_right_consistency_check(dispL, left_img, right_img, model, threshold=1.
     valid = (x_r >= 0) & (x_r < w) & (dispL > 0)
     dispL_filtered = np.where(valid, dispL, 0)
     diff = np.abs(dispL_filtered - dispR[np.arange(h)[:, None], x_r])
-    bad = diff > threshold
+
+    threshold_map = alpha * dispL_filtered
+    bad = (diff > threshold_map) & valid
     dispL_filtered[bad] = 0
+
+    # import matplotlib
+    # matplotlib.use('Qt5Agg')
+    # import matplotlib.pyplot as plt
+    #
+    # fig, axs = plt.subplots(2, 2, figsize=(10, 10))
+    # axs[0, 0].imshow(dispL, cmap='gray')
+    # axs[0, 0].set_title('dispL')
+    # axs[0, 1].imshow(x_r, cmap='gray')
+    # axs[0, 1].set_title('x_r')
+    # axs[1, 0].imshow(dispR, cmap='gray')
+    # axs[1, 0].set_title('dispR')
+    # axs[1, 1].imshow(diff, cmap='gray')
+    # axs[1, 1].set_title('diff')
+    # plt.show()
+
 
     return dispL_filtered
 
