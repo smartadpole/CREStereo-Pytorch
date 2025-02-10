@@ -25,6 +25,8 @@ def GetArgs():
                                      formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     parser.add_argument("--data", type=str, help="data path")
     parser.add_argument('--lr_threshold', type=float, default=-1, help="ignore the disp in left and right when diff ratio larger than lr_threshold; less than 0 means no filter")
+    parser.add_argument('--bf', type=float, default=14.2, help="baseline length multiply focal length")
+    parser.add_argument('--max_depth', type=int, default=1000, help="the valide max depth (cm)")
 
     args = parser.parse_args()
     return args
@@ -64,6 +66,44 @@ def large_region(img1, img2):
 
     return output
 
+import numpy as np
+
+def fill_holes_simple(disp):
+    """
+    use 4-neighbors to fill holes in disp
+
+    disp: shape(H,W)，0 is invalid pixel to fill
+    return: disp_filled
+    """
+    disp_filled = disp.copy()
+    H, W = disp_filled.shape
+
+    # --- left→right
+    for y in range(H):
+        for x in range(1, W):
+            if disp_filled[y, x] == 0:
+                disp_filled[y, x] = disp_filled[y, x-1]
+
+    # ---  right→left
+    for y in range(H):
+        for x in range(W-2, -1, -1):
+            if disp_filled[y, x] == 0:
+                disp_filled[y, x] = disp_filled[y, x+1]
+
+    # --- up→down
+    for x in range(W):
+        for y in range(1, H):
+            if disp_filled[y, x] == 0:
+                disp_filled[y, x] = disp_filled[y-1, x]
+
+    # --- down→up
+    for x in range(W):
+        for y in range(H-2, -1, -1):
+            if disp_filled[y, x] == 0:
+                disp_filled[y, x] = disp_filled[y+1, x]
+
+    return disp_filled
+
 
 def left_right_consistency_check(dispL, dispR, alpha=0.1):
     """
@@ -80,50 +120,68 @@ def left_right_consistency_check(dispL, dispR, alpha=0.1):
 
     x_coords = np.arange(w)
     x_r = (x_coords[None, :] - dispL).astype(int)
+    occlusion_r = (x_r < 0) | (x_r >= w)
     x_r = np.clip(x_r, 0, w - 1)  # Ensure indices are within bounds
     valid = (dispL > 0)
     dispL_filtered = np.where(valid, dispL, 0)
     dispR_align = dispR[np.arange(h)[:, None], x_r]
-    diff = np.abs(dispL_filtered - dispR_align)
-    edge_occlusion =  (np.abs(diff - dispL_filtered) / (dispL_filtered + 1e-6)) > 1.5
+    diff_l = np.abs(dispL_filtered - dispR_align)
+
+    x_l = (x_coords[None, :] + dispR).astype(int)
+    occlusion_l = (x_l < 0) | (x_l >= w)
+    x_l = np.clip(x_l, 0, w - 1)  # Ensure indices are within bounds
+    valid = (dispR > 0)
+    dispR_filtered = np.where(valid, dispR, 0)
+    dispL_align = dispL[np.arange(h)[:, None], x_l]
+    diff_r = np.abs(dispR_filtered - dispL_align)
+    diff_l_hat = diff_r[np.arange(h)[:, None], x_r]
+
+    diff = np.minimum(diff_l, diff_l_hat)
+    diff[occlusion_r] = diff_l[occlusion_r]
+
+    edge_occlusion =  (diff_l / dispL_filtered) > 0.8
     edge_occlusion_dilate = cv2.dilate(edge_occlusion.astype(np.uint8), np.ones((10, 10), np.uint8))
-    diff[edge_occlusion > 0] = 0
+    diff[edge_occlusion_dilate > 0] = 0
+    diff_no_occlusion = fill_holes_simple(diff)
+
 
     threshold_map = alpha * dispL_filtered
     bad = (diff > threshold_map) & valid
+    bad2 = (diff_no_occlusion > threshold_map) & valid
+    bad2 = bad2 | bad
 
-    edge_occlusion_filter = large_region(edge_occlusion_dilate, bad)
-    edge_occlusion_filter = edge_occlusion_filter > 0
-    dispL_filtered[edge_occlusion_filter] = 0
-    bad = bad | edge_occlusion_filter
+    # edge_occlusion_filter = large_region(edge_occlusion_dilate, bad)
+    # edge_occlusion_filter = edge_occlusion_filter > 0
+    # dispL_filtered[edge_occlusion_filter] = 0
+    # bad = bad | edge_occlusion_filter
 
-    bad_2 = cv2.morphologyEx(bad.astype(np.uint8), cv2.MORPH_CLOSE, np.ones((3, 3), np.uint8))
-    bad_2 = cv2.morphologyEx(bad_2.astype(np.uint8), cv2.MORPH_OPEN, np.ones((3, 3), np.uint8))
-    bad = bad_2 > 0
+    bad = cv2.morphologyEx(bad2.astype(np.uint8), cv2.MORPH_CLOSE, np.ones((3, 3), np.uint8))
+    bad = cv2.morphologyEx(bad.astype(np.uint8), cv2.MORPH_OPEN, np.ones((3, 3), np.uint8))
+    bad = bad > 0
 
     dispL_filtered[bad] = 0
 
     return dispL_filtered
 
-    # import matplotlib
-    # matplotlib.use('Qt5Agg')
-    # import matplotlib.pyplot as plt
-    #
-    # fig, axs = plt.subplots(3, 2, figsize=(10, 10))
-    # axs[0, 0].imshow(dispL, cmap='gray')
-    # axs[0, 0].set_title('dispL')
-    # axs[0, 1].imshow(edge_occlusion, cmap='gray')
-    # axs[0, 1].set_title('edge_occlusion')
-    # axs[1, 0].imshow(bad, cmap='gray')
-    # axs[1, 0].set_title('bad')
-    # axs[1, 1].imshow(diff, cmap='gray')
-    # axs[1, 1].set_title('diff')
-    # axs[2, 0].imshow(bad_2, cmap='gray')
-    # axs[2, 0].set_title('bad_2')
-    # axs[2, 1].imshow(edge_occlusion_filter, cmap='gray')
-    # axs[2, 1].set_title('occluded_mask')
-    #
-    # plt.show()
+    import matplotlib
+    matplotlib.use('Qt5Agg')
+    import matplotlib.pyplot as plt
+
+    fig, axs = plt.subplots(3, 2, figsize=(10, 10))
+    axs[0, 0].imshow(dispL, cmap='gray')
+    axs[0, 0].set_title('dispL')
+    axs[0, 1].imshow(bad, cmap='gray')
+    axs[0, 1].set_title('bad')
+    axs[1, 0].imshow(diff_l, cmap='gray')
+    axs[1, 0].set_title('diff_l')
+    axs[1, 1].imshow(diff, cmap='gray')
+    axs[1, 1].set_title('diff')
+    axs[2, 0].imshow(dispL_filtered, cmap='gray')
+    axs[2, 0].set_title('dispL_filtered')
+    axs[2, 1].imshow(edge_occlusion, cmap='gray')
+    axs[2, 1].set_title('edge_occlusion')
+
+    plt.show()
 
 
     return dispL_filtered
@@ -177,15 +235,23 @@ def main():
     right_root = os.path.join(args.data, 'right', 'depth')
     rgb_root = os.path.join(args.data, 'rgb', 'left')
     root_len_left = len(left_root.rstrip('/'))
-    files = match_images([left_root, right_root, rgb_root])
+    left_files, right_files, rgb_files = match_images([left_root, right_root, rgb_root])
+    start = 670
+    left_files = left_files[start:]
+    right_files = right_files[start:]
+    rgb_files = rgb_files[start:]
 
-    for left_file, right_file, rgb_file in tzip(*files):
+    for left_file, right_file, rgb_file in tzip(left_files, right_files, rgb_files):
         left_img = cv2.imread(left_file, cv2.IMREAD_UNCHANGED)
         rgb = cv2.imread(rgb_file, cv2.IMREAD_UNCHANGED)
         right_img = cv2.imread(right_file, cv2.IMREAD_UNCHANGED)
+
+        left_img =  65535.0 / left_img * args.bf * 100 / args.max_depth
+        right_img =  65535.0 / right_img * args.bf * 100 / args.max_depth
+
         dispL_filtered = left_right_consistency_check(left_img, right_img, alpha=args.lr_threshold)
         name = left_file[root_len_left+1:]
-        WriteDepth(dispL_filtered, rgb, output_dir, name, -1)
+        WriteDepth(dispL_filtered, rgb, output_dir, name, args.bf, args.max_depth)
 
 
 if __name__ == '__main__':
