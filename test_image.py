@@ -107,9 +107,10 @@ def WriteDepth(predict_np, limg, path, name, bf, max_value=65535):
     cv2.imwrite(output_gray, depth_img_u16)
     # return
 
-
+    invalid = depth_img < 0.001
     depth_norm = np.clip(depth_img, 1, max_value)
     depth_norm = 1.0 / depth_norm
+    depth_norm[invalid] = 0
     depth_norm = (depth_norm - depth_norm.min()) / (depth_norm.max() - depth_norm.min()) * 255.0
     depth_norm = depth_norm.astype(np.uint8)
 

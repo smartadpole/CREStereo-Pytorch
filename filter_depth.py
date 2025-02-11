@@ -159,7 +159,7 @@ def left_right_consistency_check(dispL, dispR, alpha=0.1):
     bad = cv2.morphologyEx(bad.astype(np.uint8), cv2.MORPH_OPEN, np.ones((3, 3), np.uint8))
     bad = bad > 0
 
-    dispL_filtered[bad] = 0
+    dispL_filtered[bad] = -1 # disp = -1 means invalid, the dpeth less than 0
 
     return dispL_filtered
 
@@ -236,7 +236,7 @@ def main():
     rgb_root = os.path.join(args.data, 'rgb', 'left')
     root_len_left = len(left_root.rstrip('/'))
     left_files, right_files, rgb_files = match_images([left_root, right_root, rgb_root])
-    start = 670
+    start = 0
     left_files = left_files[start:]
     right_files = right_files[start:]
     rgb_files = rgb_files[start:]
